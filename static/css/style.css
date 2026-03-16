@@ -18,18 +18,18 @@
     --text-secondary: #94a3b8;
     --text-muted: #64748b;
 
-    --accent-primary: #6366f1;
-    --accent-primary-hover: #818cf8;
-    --accent-glow: rgba(99, 102, 241, 0.3);
-    --accent-secondary: #06b6d4;
-    --accent-secondary-glow: rgba(6, 182, 212, 0.2);
+    --accent-primary: #00a650;
+    --accent-primary-hover: #00c25e;
+    --accent-glow: rgba(0, 166, 80, 0.3);
+    --accent-secondary: #004990;
+    --accent-secondary-glow: rgba(0, 73, 144, 0.2);
 
     --success: #10b981;
     --warning: #f59e0b;
     --danger: #ef4444;
 
     --border-subtle: rgba(255, 255, 255, 0.06);
-    --border-accent: rgba(99, 102, 241, 0.3);
+    --border-accent: rgba(0, 166, 80, 0.3);
 
     --radius-sm: 8px;
     --radius-md: 12px;
@@ -75,9 +75,9 @@ body::before {
     width: 100%;
     height: 100%;
     background:
-        radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 80%, rgba(6, 182, 212, 0.06) 0%, transparent 50%),
-        radial-gradient(ellipse at 50% 50%, rgba(139, 92, 246, 0.04) 0%, transparent 60%);
+        radial-gradient(ellipse at 20% 20%, rgba(0, 166, 80, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(0, 73, 144, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(0, 73, 144, 0.04) 0%, transparent 60%);
     pointer-events: none;
     z-index: 0;
 }
@@ -198,7 +198,7 @@ body::before {
     position: absolute;
     right: 8px;
     padding: 10px 20px;
-    background: linear-gradient(135deg, var(--accent-primary), #8b5cf6);
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
     color: white;
     border: none;
     border-radius: var(--radius-sm);
@@ -306,7 +306,7 @@ body::before {
 }
 
 .file-item.active {
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(0, 166, 80, 0.1);
     border-left: 2px solid var(--accent-primary);
 }
 
@@ -490,7 +490,7 @@ body::before {
 }
 
 .results-table tbody tr:hover {
-    background: rgba(99, 102, 241, 0.05);
+    background: rgba(0, 166, 80, 0.05);
 }
 
 .results-table tbody tr:last-child {
@@ -516,7 +516,7 @@ body::before {
     align-items: center;
     gap: 4px;
     padding: 3px 10px;
-    background: rgba(99, 102, 241, 0.12);
+    background: rgba(0, 166, 80, 0.12);
     color: var(--accent-primary-hover);
     border-radius: var(--radius-xl);
     font-size: 0.75rem;

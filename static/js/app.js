@@ -311,7 +311,7 @@ function highlightText(text, query) {
     const escaped = escapeHtml(text);
     const escapedQuery = escapeHtml(query);
     const regex = new RegExp(`(${escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    return escaped.replace(regex, '<mark style="background:rgba(99,102,241,0.25);color:#c7d2fe;padding:1px 2px;border-radius:2px;">$1</mark>');
+    return escaped.replace(regex, '<mark style="background:rgba(0,166,80,0.25);color:#86efac;padding:1px 2px;border-radius:2px;">$1</mark>');
 }
 
 function showToast(message, type = 'success') {
