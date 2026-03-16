@@ -423,6 +423,10 @@ body::before {
 }
 
 /* --- Results Area --- */
+.results-area-container {
+    min-width: 0;
+}
+
 .results-area {
     min-height: 400px;
 }
