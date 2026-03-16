@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Search across multiple spreadsheets and aggregate results in one place.">
+    <title>Spreadsheet Search Engine</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
+</head>
+<body>
+    <div class="app-container">
+
+        <!-- Header -->
+        <header class="app-header">
+            <h1>📊 Spreadsheet Search Engine</h1>
+            <p>Search and aggregate data across all your spreadsheets</p>
+            <div class="header-stats">
+                <span class="stat-badge">
+                    📁 Files: <span class="stat-value" id="stats-files">0</span>
+                </span>
+                <span class="stat-badge">
+                    📋 Rows: <span class="stat-value" id="stats-rows">0</span>
+                </span>
+                <span class="stat-badge">
+                    🔤 Columns: <span class="stat-value" id="stats-cols">0</span>
+                </span>
+            </div>
+        </header>
+
+        <!-- Search Bar -->
+        <section class="search-section">
+            <div class="search-container">
+                <div class="search-input-wrapper">
+                    <span class="search-icon">🔍</span>
+                    <input
+                        type="text"
+                        id="search-input"
+                        class="search-input"
+                        placeholder="Search across your spreadsheets…"
+                        autocomplete="off"
+                        autofocus
+                    >
+                    <button id="search-btn" class="search-btn">Search</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Layout -->
+        <div class="main-layout">
+
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <!-- Spreadsheet Files -->
+                <div class="glass-card">
+                    <div class="card-header">
+                        <h3>📁 Spreadsheets</h3>
+                        <div style="display:flex;gap:6px;">
+                            <button class="card-action" id="toggle-all-files">None</button>
+                            <button class="card-action reload-btn" id="reload-btn">
+                                <span class="reload-icon">⟳</span> Reload
+                            </button>
+                        </div>
+                    </div>
+                    <ul class="file-list" id="file-list">
+                        <li class="loading-state" style="padding:20px"><span class="loading-spinner"></span> Loading…</li>
+                    </ul>
+                </div>
+
+                <!-- Column Filter -->
+                <div class="glass-card">
+                    <div class="card-header">
+                        <h3>🔤 Search Columns</h3>
+                        <button class="card-action" id="toggle-all-cols">None</button>
+                    </div>
+                    <ul class="column-list" id="column-list">
+                        <li class="loading-state" style="padding:20px"><span class="loading-spinner"></span> Loading…</li>
+                    </ul>
+                </div>
+            </aside>
+
+            <!-- Results -->
+            <main class="results-area-container">
+                <div class="results-header">
+                    <h2>Results</h2>
+                    <span class="results-count" id="results-count"></span>
+                </div>
+                <div id="results-area">
+                    <div class="empty-state">
+                        <div class="empty-icon">🔎</div>
+                        <h3>Search across your spreadsheets</h3>
+                        <p>Enter a search term above to find matching data across all loaded files.</p>
+                    </div>
+                </div>
+            </main>
+
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
