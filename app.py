@@ -367,6 +367,89 @@ def get_directory_metadata(path):
     }
 
 
+def normalize_inferred_header(value, index):
+    """Normalize an inferred column label."""
+    if pd.isna(value):
+        return f"Unnamed: {index + 1}"
+
+    text = str(value).strip()
+    if not text or text.lower().startswith("unnamed"):
+        return f"Unnamed: {index + 1}"
+    return text
+
+
+def dedupe_headers(headers):
+    """Ensure inferred headers are unique."""
+    seen = {}
+    unique_headers = []
+
+    for header in headers:
+        count = seen.get(header, 0)
+        if count == 0:
+            unique_headers.append(header)
+        else:
+            unique_headers.append(f"{header}_{count + 1}")
+        seen[header] = count + 1
+
+    return unique_headers
+
+
+def score_header_row(row):
+    """Score a potential header row."""
+    values = [str(value).strip() if not pd.isna(value) else "" for value in row.tolist()]
+    non_empty = [value for value in values if value]
+    unnamed_count = sum(1 for value in values if not value or value.lower().startswith("unnamed"))
+    named_values = [value.lower() for value in non_empty if not value.lower().startswith("unnamed")]
+    unique_named = len(set(named_values))
+    numeric_like = 0
+
+    for value in non_empty:
+        try:
+            float(value)
+            numeric_like += 1
+        except ValueError:
+            continue
+
+    return (len(non_empty) * 3) + (unique_named * 2) - (unnamed_count * 2) - (numeric_like * 2)
+
+
+def load_with_inferred_headers(filepath):
+    """Load a spreadsheet and infer the most likely header row."""
+    if filepath.lower().endswith(".csv"):
+        raw_df = pd.read_csv(filepath, dtype=str, header=None).fillna("")
+    else:
+        raw_df = pd.read_excel(filepath, dtype=str, header=None, engine="openpyxl").fillna("")
+
+    if raw_df.empty:
+        return raw_df
+
+    candidate_count = min(8, len(raw_df))
+    best_row_index = 0
+    best_score = None
+
+    for row_index in range(candidate_count):
+        score = score_header_row(raw_df.iloc[row_index])
+        if best_score is None or score > best_score:
+            best_score = score
+            best_row_index = row_index
+
+    inferred_headers = [
+        normalize_inferred_header(value, index)
+        for index, value in enumerate(raw_df.iloc[best_row_index].tolist())
+    ]
+    inferred_headers = dedupe_headers(inferred_headers)
+
+    data_df = raw_df.iloc[best_row_index + 1:].reset_index(drop=True)
+    data_df.columns = inferred_headers
+    data_df = data_df.replace({pd.NA: "", "nan": ""}).fillna("")
+
+    if not data_df.empty:
+        data_df = data_df[~data_df.apply(lambda row: all(str(value).strip() == "" for value in row), axis=1)]
+        data_df = data_df.reset_index(drop=True)
+
+    return data_df
+
+
 def load_spreadsheets():
     """Scan all configured directories and load CSV/Excel files into memory."""
     global spreadsheets, source_directories
@@ -390,10 +473,7 @@ def load_spreadsheets():
                 continue
 
             try:
-                if filename.lower().endswith(".csv"):
-                    df = pd.read_csv(filepath, dtype=str).fillna("")
-                else:
-                    df = pd.read_excel(filepath, dtype=str, engine="openpyxl").fillna("")
+                df = load_with_inferred_headers(filepath)
 
                 file_id = filepath
                 spreadsheets[file_id] = {
@@ -807,6 +887,62 @@ def create_user():
         return api_error("That username already exists.", 409)
 
     return jsonify({"message": "User account created successfully."}), 201
+
+
+@app.route("/api/users/<int:user_id>", methods=["PATCH"])
+@permission_required("can_view_users")
+def update_user(user_id):
+    """Update a user's active status."""
+    payload = request.get_json(silent=True) or {}
+    current_user = get_current_user()
+
+    if "is_active" not in payload:
+        return api_error("An is_active value is required.", 400)
+
+    is_active = bool(payload["is_active"])
+
+    if current_user and current_user["id"] == user_id and not is_active:
+        return api_error("You cannot deactivate your own active session.", 400)
+
+    with get_connection() as connection:
+        user_row = connection.execute(
+            "SELECT id, username FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+
+        if not user_row:
+            return api_error("User not found.", 404)
+
+        connection.execute(
+            "UPDATE users SET is_active = ? WHERE id = ?",
+            (int(is_active), user_id),
+        )
+
+    return jsonify({
+        "message": f"User {'activated' if is_active else 'deactivated'} successfully."
+    })
+
+
+@app.route("/api/users/<int:user_id>", methods=["DELETE"])
+@permission_required("can_view_users")
+def delete_user(user_id):
+    """Delete a user account."""
+    current_user = get_current_user()
+    if current_user and current_user["id"] == user_id:
+        return api_error("You cannot delete your own active session.", 400)
+
+    with get_connection() as connection:
+        user_row = connection.execute(
+            "SELECT id FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+
+        if not user_row:
+            return api_error("User not found.", 404)
+
+        connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+    return jsonify({"message": "User deleted successfully."})
 
 
 # --------------- Startup ---------------

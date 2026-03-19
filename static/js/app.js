@@ -25,6 +25,7 @@ const brandSubtitle = document.getElementById('brand-subtitle');
 const logoFrame = document.getElementById('logo-frame');
 const resultsArea = document.getElementById('results-area');
 const resultsSummary = document.getElementById('results-summary');
+const clearResultsBtn = document.getElementById('clear-results-btn');
 const searchInput = document.getElementById('search-input');
 const searchBtn = document.getElementById('search-btn');
 const autocompleteList = document.getElementById('autocomplete-list');
@@ -103,6 +104,7 @@ function bindEvents() {
     }
 
     searchBtn?.addEventListener('click', performSearch);
+    clearResultsBtn?.addEventListener('click', clearResults);
     addDirectoryBtn?.addEventListener('click', addDirectory);
     reloadBtn?.addEventListener('click', reloadData);
     toggleAllFilesBtn?.addEventListener('click', toggleAllFiles);
@@ -391,6 +393,44 @@ async function loadUsers() {
     } catch (error) {
         console.error('Failed to load users:', error);
         userList.innerHTML = '<div class="loading-line">Unable to load users.</div>';
+    }
+}
+
+async function toggleUserActive(userId, nextState) {
+    try {
+        const response = await fetch(`/api/users/${userId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_active: nextState }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to update user.');
+        }
+
+        await loadUsers();
+        showToast(data.message, 'success');
+    } catch (error) {
+        console.error('Failed to update user:', error);
+        showToast(error.message || 'Failed to update user.', 'error');
+    }
+}
+
+async function deleteUser(userId) {
+    try {
+        const response = await fetch(`/api/users/${userId}`, {
+            method: 'DELETE',
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to delete user.');
+        }
+
+        await loadUsers();
+        showToast(data.message, 'success');
+    } catch (error) {
+        console.error('Failed to delete user:', error);
+        showToast(error.message || 'Failed to delete user.', 'error');
     }
 }
 
@@ -717,8 +757,28 @@ function renderUsers(users) {
                 <span class="micro-pill muted">${user.permissions.can_view_settings ? 'Settings' : 'No settings'}</span>
                 <span class="micro-pill muted">${user.permissions.can_view_users ? 'Users' : 'No users'}</span>
             </div>
+            <div class="user-card-actions">
+                <button class="ghost-btn user-action-btn" type="button" data-user-toggle="${user.id}" data-next-active="${!user.is_active}">
+                    ${user.is_active ? 'Deactivate' : 'Activate'}
+                </button>
+                <button class="ghost-btn user-action-btn danger-btn" type="button" data-user-delete="${user.id}">
+                    Delete
+                </button>
+            </div>
         </article>
     `).join('');
+
+    userList.querySelectorAll('[data-user-toggle]').forEach((button) => {
+        button.addEventListener('click', () => {
+            toggleUserActive(Number(button.dataset.userToggle), button.dataset.nextActive === 'true');
+        });
+    });
+
+    userList.querySelectorAll('[data-user-delete]').forEach((button) => {
+        button.addEventListener('click', () => {
+            deleteUser(Number(button.dataset.userDelete));
+        });
+    });
 }
 
 function updateStats() {
@@ -859,6 +919,22 @@ function previewLogo() {
 
 function showLoading() {
     resultsArea.innerHTML = '<div class="loading-panel">Searching connected spreadsheets...</div>';
+}
+
+function clearResults() {
+    searchResults = [];
+    currentPage = 1;
+    if (searchInput) {
+        searchInput.value = '';
+    }
+    hideAutocomplete();
+    if (resultsSummary) {
+        resultsSummary.textContent = 'Ready to search';
+    }
+    showEmptyState(
+        'Search across your connected spreadsheets',
+        'Run a search to see paginated result cards that stay readable on smaller screens.'
+    );
 }
 
 function showEmptyState(title, copy) {

@@ -16,6 +16,7 @@
     </script>
 </head>
 <body>
+    <div id="particle-canvas" aria-hidden="true"></div>
     <div class="dashboard-shell">
         <header class="topbar">
             <div class="brand-cluster">
@@ -147,7 +148,10 @@
                                 <p class="panel-kicker">Result explorer</p>
                                 <h2>Search Results</h2>
                             </div>
-                            <div class="results-summary" id="results-summary">Ready to search</div>
+                            <div class="results-actions">
+                                <div class="results-summary" id="results-summary">Ready to search</div>
+                                <button class="ghost-btn" id="clear-results-btn" type="button">Clear</button>
+                            </div>
                         </div>
                         <div id="results-area" class="results-area">
                             <div class="empty-state">
@@ -328,6 +332,7 @@
             settings: {{ app_settings | tojson }}
         };
     </script>
+    <script src="/static/js/particles.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

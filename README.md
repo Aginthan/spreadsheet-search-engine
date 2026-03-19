@@ -1,174 +1,102 @@
-# 📊 Spreadsheet Search Engine
+# SKA Search Hub
 
-A modern web application that lets you search across multiple spreadsheets (CSV & Excel) and view aggregated results in one place. Built with Python (Flask + pandas) and a sleek dark-themed frontend.
+SKA Search Hub is a spreadsheet search application for CSV and Excel files. It lets teams search data across multiple source folders, manage user access, customize branding, and work through a clean tabbed interface.
 
-![Spreadsheet Search Engine](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
-![Flask](https://img.shields.io/badge/Flask-3.1-green?logo=flask)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+## Features
 
----
+- Search across CSV and Excel files from multiple source folders
+- Autocomplete suggestions while typing
+- File and column filters for narrowing search scope
+- Separate tabs for Search, Sources, Settings, and Users
+- User accounts with panel-level access control
+- Administrator account with full access
+- Activate, deactivate, create, and delete users
+- Custom logo, app name, subtitle, and results-per-page settings
+- Dark mode toggle
+- Local particle background animation
 
-## ✨ Features
+## Requirements
 
-- **Multi-folder support** — Reads spreadsheets from multiple local folders and network share paths
-- **Multi-format support** — Reads both `.csv` and `.xlsx` (Excel) files
-- **Cross-file search** — Search across all spreadsheets simultaneously
-- **Column filtering** — Select which columns to search in
-- **File filtering** — Choose which spreadsheets to include in searches
-- **Aggregated results** — Results from all files displayed in one table with source badges
-- **Match highlighting** — Search terms are highlighted in results
-- **Live reload** — Add or remove spreadsheets and reload without restarting
-- **Modern UI** — Dark glassmorphism theme with smooth animations
+- Python 3.10+
+- `pip`
 
----
+## Quick Start
 
-## 🖼️ Screenshots
+1. Clone the project:
 
-### Initial View
-The app auto-detects all spreadsheets in the configured source folders and displays file/column metadata:
-
-![Initial View](docs/screenshots/initial_state.png)
-
-### Search Results
-Search "New York" returns aggregated results from both CSV and Excel files:
-
-![Search Results](docs/screenshots/search_results.png)
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- **Python 3.10+** installed on your system
-- **pip** (Python package manager)
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/spreadsheet-search-engine.git
-   cd spreadsheet-search-engine
-   ```
-
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Add your spreadsheets**
-
-   By default, the app scans the `data/` directory. You can also add more local folders or network share paths from the web UI after startup.
-
-   Example default folder:
-   ```
-   data/
-   ├── your_file_1.csv
-   ├── your_file_2.xlsx
-   └── ...
-   ```
-
-4. **Run the application**
-   ```bash
-   python app.py
-   ```
-
-5. **Open in browser**
-
-   Navigate to [http://localhost:5000](http://localhost:5000)
-
----
-
-## 📖 Usage
-
-### Searching
-1. Type your search query in the search bar
-2. Press **Enter** or click the **Search** button
-3. Results from all matching spreadsheets appear in a single table
-
-### Filtering by Columns
-- Use the **Search Columns** panel in the sidebar to select/deselect columns
-- Click **None** to deselect all, then pick specific columns
-- Only selected columns are searched
-
-### Filtering by Files
-- Use the **Spreadsheets** panel to include/exclude specific files
-- Click **None** to deselect all, then pick specific files
-
-### Managing Source Folders
-- Use the **Source Folders** panel in the sidebar to add multiple directories
-- Local paths, mounted drives, and Windows UNC paths such as `\\SERVER\Shared\Reports` are supported
-- The folder list is persisted in `data_sources.json`
-
-### Reloading Data
-- After adding or removing spreadsheet files from any configured source folder, click the **⟳ Reload** button in the sidebar
-- The app will re-scan every configured folder and update the file/column lists
-
----
-
-## 📁 Project Structure
-
+```bash
+git clone <your-repository-url>
+cd spreadsheet-search-engine
 ```
+
+2. Create a virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+3. Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+4. Start the app:
+
+```bash
+python app.py
+```
+
+5. Open the app:
+
+```text
+http://localhost:5555
+```
+
+## First Login
+
+On first run, the application creates a default administrator account:
+
+- Username: `admin`
+- Password: `admin123`
+
+Log in with that account first, then create the users you need from the `Users` tab.
+
+## Spreadsheet Sources
+
+- The default local spreadsheet folder is `data/`
+- Additional source folders are stored in `data_sources.json`
+- Full source paths are shown only in the `Sources` tab
+
+## Project Structure
+
+```text
 spreadsheet-search-engine/
-├── app.py                  # Flask backend & search API
-├── requirements.txt        # Python dependencies
-├── README.md               # This file
-├── .gitignore              # Git ignore rules
-├── data/                   # Default local spreadsheet folder
-│   ├── employees.csv       # Sample CSV data
-│   └── companies.xlsx      # Sample Excel data
-├── data_sources.json       # Saved list of configured source folders
+├── app.py
+├── requirements.txt
+├── README.md
+├── data/
 ├── static/
 │   ├── css/
-│   │   └── style.css       # Dark theme & glassmorphism styles
+│   │   └── style.css
 │   └── js/
-│       └── app.js          # Frontend search & UI logic
+│       ├── app.js
+│       └── particles.js
 └── templates/
-    └── index.html          # Main HTML page
+    ├── index.html
+    └── login.html
 ```
 
----
+## Main Screens
 
-## 🔌 API Endpoints
+- `Search`: search spreadsheets and view paginated results
+- `Sources`: view or manage connected source folders
+- `Settings`: update branding and UI settings
+- `Users`: manage accounts and access control
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Serves the main web interface |
-| `GET` | `/api/spreadsheets` | Returns metadata for all loaded files |
-| `GET` | `/api/directories` | Returns configured source folders |
-| `POST` | `/api/directories` | Adds a source folder and reloads spreadsheets |
-| `DELETE` | `/api/directories` | Removes a source folder and reloads spreadsheets |
-| `GET` | `/api/search?q=<query>&columns=<col1,col2>&files=<file_id1,file_id2>` | Searches across spreadsheets |
-| `POST` | `/api/reload` | Re-scans all configured source folders and reloads files |
+## Notes
 
-### Search Parameters
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `q` | Yes | The search term |
-| `columns` | No | Comma-separated column names to search in (defaults to all) |
-| `files` | No | Comma-separated file ids to include (defaults to all) |
-
----
-
-## 🛠️ Configuration
-
-The default local data directory is `data/` inside the project folder. Additional folders are stored in `data_sources.json`.
-
-If you want to change the built-in default folder, edit the `DEFAULT_DATA_DIR` variable in `app.py`:
-
-```python
-DEFAULT_DATA_DIR = os.path.join(BASE_DIR, "data")
-```
-
-The server runs on port `5000` by default. To change it:
-
-```python
-app.run(debug=True, host="0.0.0.0", port=8080)  # Change to your preferred port
-```
-
----
-
-## 📝 License
-
-This project is open source and available under the [MIT License](LICENSE).
+- Source folder changes reload spreadsheet data without restarting the app
+- The app will try to recognize the real spreadsheet header row automatically
+- If it cannot confidently detect a header, fallback column names such as `Unnamed` are still used
