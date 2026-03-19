@@ -41,6 +41,7 @@ DEFAULT_SETTINGS = {
     "results_per_page": "8",
     "logo_filename": "",
 }
+PANEL_PERMISSION_KEYS = ("can_view_search", "can_view_settings", "can_view_users")
 
 app.config.update(
     SECRET_KEY=os.getenv("FLASK_SECRET_KEY", "change-this-secret-before-production"),
@@ -98,11 +99,32 @@ def init_database():
                 username TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
                 is_admin INTEGER NOT NULL DEFAULT 0,
+                can_view_search INTEGER NOT NULL DEFAULT 1,
+                can_view_settings INTEGER NOT NULL DEFAULT 0,
+                can_view_users INTEGER NOT NULL DEFAULT 0,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
+        existing_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if "can_view_search" not in existing_columns:
+            try:
+                connection.execute("ALTER TABLE users ADD COLUMN can_view_search INTEGER NOT NULL DEFAULT 1")
+            except sqlite3.OperationalError:
+                pass
+        if "can_view_settings" not in existing_columns:
+            try:
+                connection.execute("ALTER TABLE users ADD COLUMN can_view_settings INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+        if "can_view_users" not in existing_columns:
+            try:
+                connection.execute("ALTER TABLE users ADD COLUMN can_view_users INTEGER NOT NULL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS settings (
@@ -129,6 +151,15 @@ def init_database():
                 VALUES (?, ?, 1, 1)
                 """,
                 (DEFAULT_ADMIN_USERNAME, generate_password_hash(DEFAULT_ADMIN_PASSWORD)),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE users
+                SET can_view_search = 1,
+                    can_view_settings = CASE WHEN is_admin = 1 THEN 1 ELSE can_view_settings END,
+                    can_view_users = CASE WHEN is_admin = 1 THEN 1 ELSE can_view_users END
+                """
             )
 
 
@@ -175,7 +206,8 @@ def get_user_by_id(user_id):
     with get_connection() as connection:
         row = connection.execute(
             """
-            SELECT id, username, is_admin, is_active, created_at
+            SELECT id, username, is_admin, can_view_search, can_view_settings,
+                   can_view_users, is_active, created_at
             FROM users
             WHERE id = ?
             """,
@@ -192,12 +224,29 @@ def get_current_user():
 
 def get_serialized_user(user):
     """Return only the client-safe parts of a user object."""
+    permissions = get_user_permissions(user)
     return {
         "id": user["id"],
         "username": user["username"],
         "is_admin": bool(user["is_admin"]),
         "is_active": bool(user["is_active"]),
         "created_at": user["created_at"],
+        "permissions": permissions,
+    }
+
+
+def get_user_permissions(user):
+    """Return normalized panel permissions, with admins always fully allowed."""
+    if not user:
+        return {key: False for key in PANEL_PERMISSION_KEYS}
+
+    if user["is_admin"]:
+        return {key: True for key in PANEL_PERMISSION_KEYS}
+
+    return {
+        "can_view_search": bool(user.get("can_view_search", 0)),
+        "can_view_settings": bool(user.get("can_view_settings", 0)),
+        "can_view_users": bool(user.get("can_view_users", 0)),
     }
 
 
@@ -235,6 +284,27 @@ def admin_required(view_func):
         return view_func(*args, **kwargs)
 
     return wrapped_view
+
+
+def permission_required(permission_key):
+    """Require a specific panel permission, with admin override."""
+
+    def decorator(view_func):
+        @wraps(view_func)
+        @login_required
+        def wrapped_view(*args, **kwargs):
+            current_user = get_current_user()
+            permissions = get_user_permissions(current_user)
+            if permissions.get(permission_key):
+                return view_func(*args, **kwargs)
+            if request.path.startswith("/api/"):
+                return api_error("You do not have access to that panel.", 403)
+            flash("You do not have access to that section.", "error")
+            return redirect(url_for("index"))
+
+        return wrapped_view
+
+    return decorator
 
 
 def load_source_directories():
@@ -337,6 +407,20 @@ def load_spreadsheets():
     print(f"\nTotal: {len(spreadsheets)} spreadsheet(s) loaded.\n")
 
 
+def get_filtered_search_scope(selected_files, selected_columns):
+    """Yield searchable file info and columns after applying filters."""
+    for file_id, info in spreadsheets.items():
+        if selected_files and file_id not in selected_files:
+            continue
+
+        df = info["df"]
+        cols_to_search = selected_columns if selected_columns else info["columns"]
+        cols_to_search = [column for column in cols_to_search if column in df.columns]
+
+        if cols_to_search:
+            yield info, df, cols_to_search
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     """Render the login page and authenticate users."""
@@ -387,6 +471,7 @@ def index():
         "index.html",
         current_user=get_serialized_user(current_user),
         app_settings=settings,
+        current_permissions=get_user_permissions(current_user),
     )
 
 
@@ -401,7 +486,7 @@ def get_session_data():
 
 
 @app.route("/api/spreadsheets")
-@login_required
+@permission_required("can_view_search")
 def get_spreadsheets():
     """Return metadata about all loaded spreadsheets."""
     result = []
@@ -419,7 +504,7 @@ def get_spreadsheets():
 
 
 @app.route("/api/directories")
-@login_required
+@permission_required("can_view_search")
 def get_directories():
     """Return configured source directories."""
     global source_directories
@@ -429,7 +514,7 @@ def get_directories():
 
 
 @app.route("/api/directories", methods=["POST"])
-@admin_required
+@permission_required("can_view_search")
 def add_directory():
     """Add a source directory and reload spreadsheets."""
     payload = request.get_json(silent=True) or {}
@@ -462,7 +547,7 @@ def add_directory():
 
 
 @app.route("/api/directories", methods=["DELETE"])
-@admin_required
+@permission_required("can_view_search")
 def delete_directory():
     """Remove a source directory and reload spreadsheets."""
     payload = request.get_json(silent=True) or {}
@@ -496,7 +581,7 @@ def delete_directory():
 
 
 @app.route("/api/search")
-@login_required
+@permission_required("can_view_search")
 def search():
     """
     Search across spreadsheets.
@@ -518,17 +603,7 @@ def search():
     results = []
     query_lower = query.lower()
 
-    for file_id, info in spreadsheets.items():
-        if selected_files and file_id not in selected_files:
-            continue
-
-        df = info["df"]
-        cols_to_search = selected_columns if selected_columns else info["columns"]
-        cols_to_search = [column for column in cols_to_search if column in df.columns]
-
-        if not cols_to_search:
-            continue
-
+    for info, df, cols_to_search in get_filtered_search_scope(selected_files, selected_columns):
         mask = pd.Series([False] * len(df), index=df.index)
         for column in cols_to_search:
             mask = mask | df[column].astype(str).str.lower().str.contains(query_lower, na=False)
@@ -550,8 +625,50 @@ def search():
     })
 
 
+@app.route("/api/autocomplete")
+@permission_required("can_view_search")
+def autocomplete():
+    """Return autocomplete suggestions from loaded spreadsheet values."""
+    query = request.args.get("q", "").strip()
+    if len(query) < 2:
+        return jsonify({"suggestions": []})
+
+    selected_columns = request.args.get("columns", "")
+    selected_columns = [c.strip() for c in selected_columns.split(",") if c.strip()] if selected_columns else []
+
+    selected_files = request.args.get("files", "")
+    selected_files = [f.strip() for f in selected_files.split(",") if f.strip()] if selected_files else []
+
+    query_lower = query.lower()
+    seen = set()
+    suggestions = []
+
+    for info, df, cols_to_search in get_filtered_search_scope(selected_files, selected_columns):
+        for column in cols_to_search:
+            series = df[column].astype(str)
+            matches = series[series.str.lower().str.contains(query_lower, na=False)].head(8)
+
+            for value in matches:
+                cleaned = str(value).strip()
+                normalized = cleaned.lower()
+                if len(cleaned) < 2 or normalized in seen:
+                    continue
+
+                suggestions.append({
+                    "value": cleaned,
+                    "column": column,
+                    "source_file": info["filename"],
+                })
+                seen.add(normalized)
+
+                if len(suggestions) >= 8:
+                    return jsonify({"suggestions": suggestions})
+
+    return jsonify({"suggestions": suggestions})
+
+
 @app.route("/api/reload", methods=["POST"])
-@admin_required
+@permission_required("can_view_search")
 def reload_spreadsheets():
     """Re-scan configured directories and reload all spreadsheets."""
     load_spreadsheets()
@@ -562,14 +679,14 @@ def reload_spreadsheets():
 
 
 @app.route("/api/settings", methods=["GET"])
-@login_required
+@permission_required("can_view_settings")
 def get_app_settings():
     """Return current application settings."""
     return jsonify(get_settings())
 
 
 @app.route("/api/settings", methods=["POST"])
-@admin_required
+@permission_required("can_view_settings")
 def update_app_settings():
     """Update application settings and optionally upload a logo."""
     current_settings = get_settings()
@@ -615,13 +732,14 @@ def update_app_settings():
 
 
 @app.route("/api/users", methods=["GET"])
-@admin_required
+@permission_required("can_view_users")
 def get_users():
     """Return the list of users for administration."""
     with get_connection() as connection:
         rows = connection.execute(
             """
-            SELECT id, username, is_admin, is_active, created_at
+            SELECT id, username, is_admin, can_view_search, can_view_settings,
+                   can_view_users, is_active, created_at
             FROM users
             ORDER BY username ASC
             """
@@ -631,13 +749,23 @@ def get_users():
 
 
 @app.route("/api/users", methods=["POST"])
-@admin_required
+@permission_required("can_view_users")
 def create_user():
     """Create a new user account."""
     payload = request.get_json(silent=True) or {}
     username = payload.get("username", "").strip()
     password = payload.get("password", "")
     is_admin = bool(payload.get("is_admin", False))
+    permissions = payload.get("permissions", {}) if isinstance(payload.get("permissions", {}), dict) else {}
+
+    can_view_search = bool(permissions.get("can_view_search", True))
+    can_view_settings = bool(permissions.get("can_view_settings", False))
+    can_view_users = bool(permissions.get("can_view_users", False))
+
+    if is_admin:
+        can_view_search = True
+        can_view_settings = True
+        can_view_users = True
 
     if len(username) < 3:
         return api_error("Username must be at least 3 characters long.", 400)
@@ -649,10 +777,20 @@ def create_user():
         with get_connection() as connection:
             connection.execute(
                 """
-                INSERT INTO users (username, password_hash, is_admin, is_active)
-                VALUES (?, ?, ?, 1)
+                INSERT INTO users (
+                    username, password_hash, is_admin, can_view_search,
+                    can_view_settings, can_view_users, is_active
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 1)
                 """,
-                (username, generate_password_hash(password), int(is_admin)),
+                (
+                    username,
+                    generate_password_hash(password),
+                    int(is_admin),
+                    int(can_view_search),
+                    int(can_view_settings),
+                    int(can_view_users),
+                ),
             )
     except sqlite3.IntegrityError:
         return api_error("That username already exists.", 409)

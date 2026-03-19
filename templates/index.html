@@ -6,6 +6,14 @@
     <meta name="description" content="Search across multiple spreadsheets and shared folders in one place.">
     <title>{{ app_settings.app_name }}</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <script>
+        (function () {
+            var theme = localStorage.getItem('ska-theme');
+            if (theme === 'dark') {
+                document.documentElement.dataset.theme = 'dark';
+            }
+        }());
+    </script>
 </head>
 <body>
     <div class="dashboard-shell">
@@ -27,13 +35,23 @@
 
             <div class="topbar-actions">
                 <nav class="tab-nav">
-                    <button class="tab-btn active" data-tab-target="search-panel">Search</button>
-                    {% if current_user.is_admin %}
+                    {% if current_permissions.can_view_search %}
+                        <button class="tab-btn active" data-tab-target="search-panel">Search</button>
+                    {% endif %}
+                    {% if current_permissions.can_view_settings %}
                         <button class="tab-btn" data-tab-target="settings-panel">Settings</button>
+                    {% endif %}
+                    {% if current_permissions.can_view_users %}
                         <button class="tab-btn" data-tab-target="users-panel">Users</button>
                     {% endif %}
                 </nav>
                 <div class="user-meta">
+                    <button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="false">
+                        <span class="theme-toggle-track">
+                            <span class="theme-toggle-thumb"></span>
+                        </span>
+                        <span id="theme-toggle-label">Dark mode</span>
+                    </button>
                     <div>
                         <strong>{{ current_user.username }}</strong>
                         <span class="role-pill {{ 'admin' if current_user.is_admin else 'user' }}">
@@ -47,38 +65,36 @@
             </div>
         </header>
 
-        <div class="dashboard-grid">
-            <aside class="side-panel">
-                <section class="panel-card highlight-card">
-                    <p class="panel-kicker">Workspace pulse</p>
-                    <div class="stats-grid">
-                        <div class="stat-block">
-                            <span>Files</span>
-                            <strong id="stats-files">0</strong>
+        <div class="dashboard-grid{% if not current_permissions.can_view_search %} no-sidebar{% endif %}">
+            {% if current_permissions.can_view_search %}
+                <aside class="side-panel">
+                    <section class="panel-card highlight-card">
+                        <p class="panel-kicker">Workspace pulse</p>
+                        <div class="stats-grid">
+                            <div class="stat-block">
+                                <span>Files</span>
+                                <strong id="stats-files">0</strong>
+                            </div>
+                            <div class="stat-block">
+                                <span>Rows</span>
+                                <strong id="stats-rows">0</strong>
+                            </div>
+                            <div class="stat-block">
+                                <span>Columns</span>
+                                <strong id="stats-cols">0</strong>
+                            </div>
                         </div>
-                        <div class="stat-block">
-                            <span>Rows</span>
-                            <strong id="stats-rows">0</strong>
-                        </div>
-                        <div class="stat-block">
-                            <span>Columns</span>
-                            <strong id="stats-cols">0</strong>
-                        </div>
-                    </div>
-                </section>
+                    </section>
 
-                <section class="panel-card">
-                    <div class="panel-header">
-                        <div>
-                            <p class="panel-kicker">Shared sources</p>
-                            <h2>Source Folders</h2>
-                        </div>
-                        {% if current_user.is_admin %}
+                    <section class="panel-card">
+                        <div class="panel-header">
+                            <div>
+                                <p class="panel-kicker">Shared sources</p>
+                                <h2>Source Folders</h2>
+                            </div>
                             <button class="ghost-btn" id="reload-btn" type="button">Reload</button>
-                        {% endif %}
-                    </div>
+                        </div>
 
-                    {% if current_user.is_admin %}
                         <div class="directory-form">
                             <input
                                 type="text"
@@ -89,43 +105,42 @@
                             >
                             <button class="primary-btn compact" id="add-directory-btn" type="button">Add</button>
                         </div>
-                    {% else %}
-                        <p class="helper-text">Ask an administrator to add or remove source folders.</p>
-                    {% endif %}
 
-                    <ul class="stack-list" id="directory-list">
-                        <li class="loading-line">Loading folders...</li>
-                    </ul>
-                </section>
+                        <ul class="stack-list" id="directory-list">
+                            <li class="loading-line">Loading folders...</li>
+                        </ul>
+                    </section>
 
-                <section class="panel-card">
-                    <div class="panel-header">
-                        <div>
-                            <p class="panel-kicker">Search scope</p>
-                            <h2>Spreadsheets</h2>
+                    <section class="panel-card">
+                        <div class="panel-header">
+                            <div>
+                                <p class="panel-kicker">Search scope</p>
+                                <h2>Spreadsheets</h2>
+                            </div>
+                            <button class="ghost-btn" id="toggle-all-files" type="button">None</button>
                         </div>
-                        <button class="ghost-btn" id="toggle-all-files" type="button">None</button>
-                    </div>
-                    <ul class="stack-list selectable-list" id="file-list">
-                        <li class="loading-line">Loading spreadsheets...</li>
-                    </ul>
-                </section>
+                        <ul class="stack-list selectable-list" id="file-list">
+                            <li class="loading-line">Loading spreadsheets...</li>
+                        </ul>
+                    </section>
 
-                <section class="panel-card">
-                    <div class="panel-header">
-                        <div>
-                            <p class="panel-kicker">Column targeting</p>
-                            <h2>Columns</h2>
+                    <section class="panel-card">
+                        <div class="panel-header">
+                            <div>
+                                <p class="panel-kicker">Column targeting</p>
+                                <h2>Columns</h2>
+                            </div>
+                            <button class="ghost-btn" id="toggle-all-cols" type="button">None</button>
                         </div>
-                        <button class="ghost-btn" id="toggle-all-cols" type="button">None</button>
-                    </div>
-                    <ul class="stack-list selectable-list" id="column-list">
-                        <li class="loading-line">Loading columns...</li>
-                    </ul>
-                </section>
-            </aside>
+                        <ul class="stack-list selectable-list" id="column-list">
+                            <li class="loading-line">Loading columns...</li>
+                        </ul>
+                    </section>
+                </aside>
+            {% endif %}
 
             <main class="content-panel">
+                {% if current_permissions.can_view_search %}
                 <section class="tab-panel active" id="search-panel">
                     <section class="hero-card">
                         <div class="hero-copy">
@@ -134,13 +149,16 @@
                             <p>Use focused column filters, search every connected source, and browse results in a readable card view.</p>
                         </div>
                         <div class="search-bar">
-                            <input
-                                type="text"
-                                id="search-input"
-                                class="search-input"
-                                placeholder="Search customer names, locations, IDs, departments..."
-                                autocomplete="off"
-                            >
+                            <div class="search-input-group">
+                                <input
+                                    type="text"
+                                    id="search-input"
+                                    class="search-input"
+                                    placeholder="Search customer names, locations, IDs, departments..."
+                                    autocomplete="off"
+                                >
+                                <div class="autocomplete-list hidden" id="autocomplete-list"></div>
+                            </div>
                             <button id="search-btn" class="primary-btn" type="button">Search</button>
                         </div>
                     </section>
@@ -162,8 +180,9 @@
                         </div>
                     </section>
                 </section>
+                {% endif %}
 
-                {% if current_user.is_admin %}
+                {% if current_permissions.can_view_settings %}
                     <section class="tab-panel" id="settings-panel">
                         <section class="panel-card wide-card">
                             <div class="panel-header">
@@ -209,7 +228,9 @@
                             </form>
                         </section>
                     </section>
+                {% endif %}
 
+                {% if current_permissions.can_view_users %}
                     <section class="tab-panel" id="users-panel">
                         <div class="admin-grid">
                             <section class="panel-card">
@@ -236,6 +257,22 @@
                                         <span>Grant administrator access</span>
                                     </label>
 
+                                    <div class="permissions-block">
+                                        <p class="permissions-title">Visible panels</p>
+                                        <label class="checkbox-row">
+                                            <input type="checkbox" id="perm-search" checked>
+                                            <span>Search</span>
+                                        </label>
+                                        <label class="checkbox-row">
+                                            <input type="checkbox" id="perm-settings">
+                                            <span>Settings</span>
+                                        </label>
+                                        <label class="checkbox-row">
+                                            <input type="checkbox" id="perm-users">
+                                            <span>Users</span>
+                                        </label>
+                                    </div>
+
                                     <button type="submit" class="primary-btn">Create account</button>
                                 </form>
                             </section>
@@ -251,6 +288,16 @@
                                     <div class="loading-line">Loading users...</div>
                                 </div>
                             </section>
+                        </div>
+                    </section>
+                {% endif %}
+
+                {% if not current_permissions.can_view_search and not current_permissions.can_view_settings and not current_permissions.can_view_users %}
+                    <section class="panel-card wide-card">
+                        <div class="empty-state">
+                            <div class="empty-mark">SKA</div>
+                            <h3>No panels assigned</h3>
+                            <p>An administrator needs to grant panel access to this account before anything can be viewed here.</p>
                         </div>
                     </section>
                 {% endif %}

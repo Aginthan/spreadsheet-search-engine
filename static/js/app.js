@@ -14,6 +14,10 @@ let selectedColumns = new Set();
 let allColumns = [];
 let searchResults = [];
 let currentPage = 1;
+let autocompleteItems = [];
+let activeSuggestionIndex = -1;
+let autocompleteController = null;
+let autocompleteDebounce = null;
 
 // --- DOM Elements ---
 const brandTitle = document.getElementById('brand-title');
@@ -23,6 +27,7 @@ const resultsArea = document.getElementById('results-area');
 const resultsSummary = document.getElementById('results-summary');
 const searchInput = document.getElementById('search-input');
 const searchBtn = document.getElementById('search-btn');
+const autocompleteList = document.getElementById('autocomplete-list');
 const directoryInput = document.getElementById('directory-input');
 const addDirectoryBtn = document.getElementById('add-directory-btn');
 const directoryListEl = document.getElementById('directory-list');
@@ -42,8 +47,14 @@ const settingsLogo = document.getElementById('settings-logo');
 const settingsLogoPreview = document.getElementById('settings-logo-preview');
 const userForm = document.getElementById('user-form');
 const userList = document.getElementById('user-list');
+const newUserAdmin = document.getElementById('new-user-admin');
+const permSearch = document.getElementById('perm-search');
+const permSettings = document.getElementById('perm-settings');
+const permUsers = document.getElementById('perm-users');
 const tabButtons = document.querySelectorAll('.tab-btn');
 const tabPanels = document.querySelectorAll('.tab-panel');
+const themeToggle = document.getElementById('theme-toggle');
+const themeToggleLabel = document.getElementById('theme-toggle-label');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -58,10 +69,27 @@ function bindEvents() {
     });
 
     if (searchInput) {
+        searchInput.addEventListener('input', handleAutocompleteInput);
         searchInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
+                if (activeSuggestionIndex >= 0 && autocompleteItems[activeSuggestionIndex]) {
+                    event.preventDefault();
+                    applySuggestion(autocompleteItems[activeSuggestionIndex].value);
+                    return;
+                }
                 performSearch();
+            } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                moveActiveSuggestion(1);
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                moveActiveSuggestion(-1);
+            } else if (event.key === 'Escape') {
+                hideAutocomplete();
             }
+        });
+        searchInput.addEventListener('blur', () => {
+            window.setTimeout(hideAutocomplete, 120);
         });
     }
 
@@ -81,11 +109,16 @@ function bindEvents() {
     settingsForm?.addEventListener('submit', saveSettings);
     settingsLogo?.addEventListener('change', previewLogo);
     userForm?.addEventListener('submit', createUser);
+    newUserAdmin?.addEventListener('change', syncUserPermissionInputs);
+    themeToggle?.addEventListener('click', toggleTheme);
 }
 
 async function initializeApp() {
+    syncThemeToggle();
+    syncUserPermissionInputs();
+    initializeVisibleTab();
     await Promise.all([loadDirectories(), loadSpreadsheets()]);
-    if (currentUser.is_admin) {
+    if (currentUser.permissions?.can_view_users) {
         await loadUsers();
     }
 }
@@ -98,6 +131,13 @@ function activateTab(targetId) {
     tabPanels.forEach((panel) => {
         panel.classList.toggle('active', panel.id === targetId);
     });
+}
+
+function initializeVisibleTab() {
+    const firstTab = document.querySelector('.tab-btn');
+    if (firstTab) {
+        activateTab(firstTab.dataset.tabTarget);
+    }
 }
 
 // --- API Calls ---
@@ -139,8 +179,12 @@ async function loadSpreadsheets() {
             ? new Set(retainedColumns)
             : new Set(allColumns);
 
-        toggleAllFilesBtn.textContent = selectedFiles.size === spreadsheetData.length ? 'None' : 'All';
-        toggleAllColsBtn.textContent = selectedColumns.size === allColumns.length ? 'None' : 'All';
+        if (toggleAllFilesBtn) {
+            toggleAllFilesBtn.textContent = selectedFiles.size === spreadsheetData.length ? 'None' : 'All';
+        }
+        if (toggleAllColsBtn) {
+            toggleAllColsBtn.textContent = selectedColumns.size === allColumns.length ? 'None' : 'All';
+        }
 
         renderFileList();
         renderColumnList();
@@ -235,6 +279,7 @@ async function performSearch() {
         return;
     }
 
+    hideAutocomplete();
     showLoading();
 
     const params = new URLSearchParams({ q: query });
@@ -255,6 +300,36 @@ async function performSearch() {
         console.error('Search failed:', error);
         showToast('Search failed. Please try again.', 'error');
         showEmptyState('Search failed', 'Please try again after reloading the spreadsheet sources.');
+    }
+}
+
+async function fetchAutocomplete(query) {
+    if (autocompleteController) {
+        autocompleteController.abort();
+    }
+
+    autocompleteController = new AbortController();
+
+    const params = new URLSearchParams({ q: query });
+    if (selectedColumns.size > 0 && selectedColumns.size < allColumns.length) {
+        params.set('columns', Array.from(selectedColumns).join(','));
+    }
+    if (selectedFiles.size > 0 && selectedFiles.size < spreadsheetData.length) {
+        params.set('files', Array.from(selectedFiles).join(','));
+    }
+
+    try {
+        const response = await fetch(`/api/autocomplete?${params.toString()}`, {
+            signal: autocompleteController.signal,
+        });
+        const data = await response.json();
+        autocompleteItems = data.suggestions || [];
+        activeSuggestionIndex = -1;
+        renderAutocomplete();
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Autocomplete failed:', error);
+        }
     }
 }
 
@@ -307,7 +382,7 @@ async function createUser(event) {
 
     const username = document.getElementById('new-username').value.trim();
     const password = document.getElementById('new-password').value;
-    const isAdmin = document.getElementById('new-user-admin').checked;
+    const isAdmin = newUserAdmin.checked;
 
     try {
         const response = await fetch('/api/users', {
@@ -317,6 +392,11 @@ async function createUser(event) {
                 username,
                 password,
                 is_admin: isAdmin,
+                permissions: {
+                    can_view_search: permSearch?.checked ?? true,
+                    can_view_settings: permSettings?.checked ?? false,
+                    can_view_users: permUsers?.checked ?? false,
+                },
             }),
         });
         const data = await response.json();
@@ -325,6 +405,7 @@ async function createUser(event) {
         }
 
         userForm.reset();
+        syncUserPermissionInputs();
         await loadUsers();
         showToast(data.message, 'success');
     } catch (error) {
@@ -445,7 +526,9 @@ function renderFileList() {
             }
 
             item.classList.toggle('active', checkbox.checked);
-            toggleAllFilesBtn.textContent = selectedFiles.size === spreadsheetData.length ? 'None' : 'All';
+            if (toggleAllFilesBtn) {
+                toggleAllFilesBtn.textContent = selectedFiles.size === spreadsheetData.length ? 'None' : 'All';
+            }
         });
 
         fileListEl.appendChild(item);
@@ -484,7 +567,9 @@ function renderColumnList() {
             }
 
             item.classList.toggle('active', checkbox.checked);
-            toggleAllColsBtn.textContent = selectedColumns.size === allColumns.length ? 'None' : 'All';
+            if (toggleAllColsBtn) {
+                toggleAllColsBtn.textContent = selectedColumns.size === allColumns.length ? 'None' : 'All';
+            }
         });
 
         columnListEl.appendChild(item);
@@ -558,6 +643,32 @@ function renderResults(query) {
     });
 }
 
+function renderAutocomplete() {
+    if (!autocompleteList) {
+        return;
+    }
+
+    if (!autocompleteItems.length) {
+        hideAutocomplete();
+        return;
+    }
+
+    autocompleteList.innerHTML = autocompleteItems.map((item, index) => `
+        <button class="autocomplete-item ${index === activeSuggestionIndex ? 'active' : ''}" type="button" data-index="${index}">
+            <span class="autocomplete-value">${highlightText(item.value, searchInput.value.trim())}</span>
+            <span class="autocomplete-meta">${escapeHtml(item.column)} · ${escapeHtml(item.source_file)}</span>
+        </button>
+    `).join('');
+
+    autocompleteList.classList.remove('hidden');
+    autocompleteList.querySelectorAll('.autocomplete-item').forEach((button) => {
+        button.addEventListener('mousedown', () => {
+            const index = Number(button.dataset.index);
+            applySuggestion(autocompleteItems[index].value);
+        });
+    });
+}
+
 function renderUsers(users) {
     if (!userList) {
         return;
@@ -577,6 +688,9 @@ function renderUsers(users) {
             <div class="user-card-badges">
                 <span class="micro-pill ${user.is_admin ? 'success' : 'neutral'}">${user.is_admin ? 'Administrator' : 'User'}</span>
                 <span class="micro-pill ${user.is_active ? 'neutral' : 'warning'}">${user.is_active ? 'Active' : 'Disabled'}</span>
+                <span class="micro-pill muted">${user.permissions.can_view_search ? 'Search' : 'No search'}</span>
+                <span class="micro-pill muted">${user.permissions.can_view_settings ? 'Settings' : 'No settings'}</span>
+                <span class="micro-pill muted">${user.permissions.can_view_users ? 'Users' : 'No users'}</span>
             </div>
         </article>
     `).join('');
@@ -594,18 +708,107 @@ function updateStats() {
 
 // --- Helpers ---
 
+function handleAutocompleteInput() {
+    clearTimeout(autocompleteDebounce);
+    const query = searchInput.value.trim();
+
+    if (query.length < 2) {
+        autocompleteItems = [];
+        activeSuggestionIndex = -1;
+        hideAutocomplete();
+        return;
+    }
+
+    autocompleteDebounce = window.setTimeout(() => {
+        fetchAutocomplete(query);
+    }, 180);
+}
+
+function moveActiveSuggestion(direction) {
+    if (!autocompleteItems.length) {
+        return;
+    }
+
+    activeSuggestionIndex = (activeSuggestionIndex + direction + autocompleteItems.length) % autocompleteItems.length;
+    renderAutocomplete();
+}
+
+function applySuggestion(value) {
+    searchInput.value = value;
+    hideAutocomplete();
+    performSearch();
+}
+
+function hideAutocomplete() {
+    if (!autocompleteList) {
+        return;
+    }
+    autocompleteList.classList.add('hidden');
+    autocompleteList.innerHTML = '';
+    activeSuggestionIndex = -1;
+}
+
 function toggleAllFiles() {
     const allSelected = selectedFiles.size === spreadsheetData.length;
     selectedFiles = allSelected ? new Set() : new Set(spreadsheetData.map((file) => file.id));
-    toggleAllFilesBtn.textContent = allSelected ? 'All' : 'None';
+    if (toggleAllFilesBtn) {
+        toggleAllFilesBtn.textContent = allSelected ? 'All' : 'None';
+    }
     renderFileList();
 }
 
 function toggleAllColumns() {
     const allSelected = selectedColumns.size === allColumns.length;
     selectedColumns = allSelected ? new Set() : new Set(allColumns);
-    toggleAllColsBtn.textContent = allSelected ? 'All' : 'None';
+    if (toggleAllColsBtn) {
+        toggleAllColsBtn.textContent = allSelected ? 'All' : 'None';
+    }
     renderColumnList();
+}
+
+function toggleTheme() {
+    const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    if (nextTheme === 'dark') {
+        document.documentElement.dataset.theme = 'dark';
+    } else {
+        delete document.documentElement.dataset.theme;
+    }
+    localStorage.setItem('ska-theme', nextTheme);
+    syncThemeToggle();
+}
+
+function syncThemeToggle() {
+    if (!themeToggle || !themeToggleLabel) {
+        return;
+    }
+    const isDark = document.documentElement.dataset.theme === 'dark';
+    themeToggle.setAttribute('aria-pressed', String(isDark));
+    themeToggle.classList.toggle('active', isDark);
+    themeToggleLabel.textContent = isDark ? 'Light mode' : 'Dark mode';
+}
+
+function syncUserPermissionInputs() {
+    if (!newUserAdmin) {
+        return;
+    }
+
+    const isAdmin = newUserAdmin.checked;
+    const permissionInputs = [permSearch, permSettings, permUsers].filter(Boolean);
+
+    permissionInputs.forEach((input) => {
+        input.disabled = isAdmin;
+    });
+
+    if (isAdmin) {
+        if (permSearch) permSearch.checked = true;
+        if (permSettings) permSettings.checked = true;
+        if (permUsers) permUsers.checked = true;
+        return;
+    }
+
+    if (permSearch && !permSearch.checked) {
+        permSearch.checked = true;
+    }
 }
 
 function setDirectoryFormDisabled(disabled) {
