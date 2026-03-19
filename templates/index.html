@@ -51,6 +51,29 @@
 
             <!-- Sidebar -->
             <aside class="sidebar">
+                <!-- Source Directories -->
+                <div class="glass-card">
+                    <div class="card-header">
+                        <h3>🗂️ Source Folders</h3>
+                    </div>
+                    <div class="directory-form">
+                        <input
+                            type="text"
+                            id="directory-input"
+                            class="directory-input"
+                            placeholder="Add a folder path or \\\\server\\share\\folder"
+                            autocomplete="off"
+                        >
+                        <button class="directory-add-btn" id="add-directory-btn">Add</button>
+                    </div>
+                    <p class="helper-text">
+                        Add local folders, mounted drives, or Windows network share paths.
+                    </p>
+                    <ul class="directory-list" id="directory-list">
+                        <li class="loading-state" style="padding:20px"><span class="loading-spinner"></span> Loading…</li>
+                    </ul>
+                </div>
+
                 <!-- Spreadsheet Files -->
                 <div class="glass-card">
                     <div class="card-header">

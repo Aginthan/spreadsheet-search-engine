@@ -10,6 +10,7 @@ A modern web application that lets you search across multiple spreadsheets (CSV 
 
 ## ✨ Features
 
+- **Multi-folder support** — Reads spreadsheets from multiple local folders and network share paths
 - **Multi-format support** — Reads both `.csv` and `.xlsx` (Excel) files
 - **Cross-file search** — Search across all spreadsheets simultaneously
 - **Column filtering** — Select which columns to search in
@@ -24,7 +25,7 @@ A modern web application that lets you search across multiple spreadsheets (CSV 
 ## 🖼️ Screenshots
 
 ### Initial View
-The app auto-detects all spreadsheets in the `data/` folder and displays file/column metadata:
+The app auto-detects all spreadsheets in the configured source folders and displays file/column metadata:
 
 ![Initial View](docs/screenshots/initial_state.png)
 
@@ -57,7 +58,9 @@ Search "New York" returns aggregated results from both CSV and Excel files:
 
 3. **Add your spreadsheets**
 
-   Place your `.csv` and/or `.xlsx` files in the `data/` directory:
+   By default, the app scans the `data/` directory. You can also add more local folders or network share paths from the web UI after startup.
+
+   Example default folder:
    ```
    data/
    ├── your_file_1.csv
@@ -92,9 +95,14 @@ Search "New York" returns aggregated results from both CSV and Excel files:
 - Use the **Spreadsheets** panel to include/exclude specific files
 - Click **None** to deselect all, then pick specific files
 
+### Managing Source Folders
+- Use the **Source Folders** panel in the sidebar to add multiple directories
+- Local paths, mounted drives, and Windows UNC paths such as `\\SERVER\Shared\Reports` are supported
+- The folder list is persisted in `data_sources.json`
+
 ### Reloading Data
-- After adding or removing spreadsheet files from the `data/` folder, click the **⟳ Reload** button in the sidebar
-- The app will re-scan the directory and update the file/column lists
+- After adding or removing spreadsheet files from any configured source folder, click the **⟳ Reload** button in the sidebar
+- The app will re-scan every configured folder and update the file/column lists
 
 ---
 
@@ -106,9 +114,10 @@ spreadsheet-search-engine/
 ├── requirements.txt        # Python dependencies
 ├── README.md               # This file
 ├── .gitignore              # Git ignore rules
-├── data/                   # Place your spreadsheets here
+├── data/                   # Default local spreadsheet folder
 │   ├── employees.csv       # Sample CSV data
 │   └── companies.xlsx      # Sample Excel data
+├── data_sources.json       # Saved list of configured source folders
 ├── static/
 │   ├── css/
 │   │   └── style.css       # Dark theme & glassmorphism styles
@@ -126,8 +135,11 @@ spreadsheet-search-engine/
 |--------|----------|-------------|
 | `GET` | `/` | Serves the main web interface |
 | `GET` | `/api/spreadsheets` | Returns metadata for all loaded files |
-| `GET` | `/api/search?q=<query>&columns=<col1,col2>&files=<file1,file2>` | Searches across spreadsheets |
-| `POST` | `/api/reload` | Re-scans the data directory and reloads files |
+| `GET` | `/api/directories` | Returns configured source folders |
+| `POST` | `/api/directories` | Adds a source folder and reloads spreadsheets |
+| `DELETE` | `/api/directories` | Removes a source folder and reloads spreadsheets |
+| `GET` | `/api/search?q=<query>&columns=<col1,col2>&files=<file_id1,file_id2>` | Searches across spreadsheets |
+| `POST` | `/api/reload` | Re-scans all configured source folders and reloads files |
 
 ### Search Parameters
 
@@ -135,16 +147,18 @@ spreadsheet-search-engine/
 |-----------|----------|-------------|
 | `q` | Yes | The search term |
 | `columns` | No | Comma-separated column names to search in (defaults to all) |
-| `files` | No | Comma-separated filenames to include (defaults to all) |
+| `files` | No | Comma-separated file ids to include (defaults to all) |
 
 ---
 
 ## 🛠️ Configuration
 
-The data directory defaults to `data/` inside the project folder. To change it, edit the `DATA_DIR` variable in `app.py`:
+The default local data directory is `data/` inside the project folder. Additional folders are stored in `data_sources.json`.
+
+If you want to change the built-in default folder, edit the `DEFAULT_DATA_DIR` variable in `app.py`:
 
 ```python
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+DEFAULT_DATA_DIR = os.path.join(BASE_DIR, "data")
 ```
 
 The server runs on port `5000` by default. To change it:

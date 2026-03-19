@@ -11,6 +11,7 @@ build/
 venv/
 env/
 .venv/
+data_sources.json
 
 # IDE
 .vscode/
