@@ -38,6 +38,9 @@
                     {% if current_permissions.can_view_search %}
                         <button class="tab-btn active" data-tab-target="search-panel">Search</button>
                     {% endif %}
+                    {% if current_permissions.can_view_sources %}
+                        <button class="tab-btn" data-tab-target="sources-panel">Sources</button>
+                    {% endif %}
                     {% if current_permissions.can_view_settings %}
                         <button class="tab-btn" data-tab-target="settings-panel">Settings</button>
                     {% endif %}
@@ -84,31 +87,6 @@
                                 <strong id="stats-cols">0</strong>
                             </div>
                         </div>
-                    </section>
-
-                    <section class="panel-card">
-                        <div class="panel-header">
-                            <div>
-                                <p class="panel-kicker">Shared sources</p>
-                                <h2>Source Folders</h2>
-                            </div>
-                            <button class="ghost-btn" id="reload-btn" type="button">Reload</button>
-                        </div>
-
-                        <div class="directory-form">
-                            <input
-                                type="text"
-                                id="directory-input"
-                                class="text-input"
-                                placeholder="Add a folder path or \\server\share\folder"
-                                autocomplete="off"
-                            >
-                            <button class="primary-btn compact" id="add-directory-btn" type="button">Add</button>
-                        </div>
-
-                        <ul class="stack-list" id="directory-list">
-                            <li class="loading-line">Loading folders...</li>
-                        </ul>
                     </section>
 
                     <section class="panel-card">
@@ -178,6 +156,41 @@
                                 <p>Run a search to see paginated result cards that stay readable on smaller screens.</p>
                             </div>
                         </div>
+                    </section>
+                </section>
+                {% endif %}
+
+                {% if current_permissions.can_view_sources %}
+                <section class="tab-panel" id="sources-panel">
+                    <section class="panel-card wide-card">
+                        <div class="panel-header">
+                            <div>
+                                <p class="panel-kicker">Shared sources</p>
+                                <h2>Source Folders</h2>
+                            </div>
+                            {% if current_user.is_admin %}
+                                <button class="ghost-btn" id="reload-btn" type="button">Reload</button>
+                            {% endif %}
+                        </div>
+
+                        {% if current_user.is_admin %}
+                            <div class="directory-form">
+                                <input
+                                    type="text"
+                                    id="directory-input"
+                                    class="text-input"
+                                    placeholder="Add a folder path or \\server\share\folder"
+                                    autocomplete="off"
+                                >
+                                <button class="primary-btn compact" id="add-directory-btn" type="button">Add</button>
+                            </div>
+                        {% else %}
+                            <p class="helper-text">You can view connected sources here. Only administrators can change them.</p>
+                        {% endif %}
+
+                        <ul class="stack-list sources-list" id="directory-list">
+                            <li class="loading-line">Loading folders...</li>
+                        </ul>
                     </section>
                 </section>
                 {% endif %}
@@ -264,6 +277,10 @@
                                             <span>Search</span>
                                         </label>
                                         <label class="checkbox-row">
+                                            <input type="checkbox" id="perm-sources">
+                                            <span>Sources</span>
+                                        </label>
+                                        <label class="checkbox-row">
                                             <input type="checkbox" id="perm-settings">
                                             <span>Settings</span>
                                         </label>
@@ -292,7 +309,7 @@
                     </section>
                 {% endif %}
 
-                {% if not current_permissions.can_view_search and not current_permissions.can_view_settings and not current_permissions.can_view_users %}
+                {% if not current_permissions.can_view_search and not current_permissions.can_view_sources and not current_permissions.can_view_settings and not current_permissions.can_view_users %}
                     <section class="panel-card wide-card">
                         <div class="empty-state">
                             <div class="empty-mark">SKA</div>

@@ -41,7 +41,7 @@ DEFAULT_SETTINGS = {
     "results_per_page": "8",
     "logo_filename": "",
 }
-PANEL_PERMISSION_KEYS = ("can_view_search", "can_view_settings", "can_view_users")
+PANEL_PERMISSION_KEYS = ("can_view_search", "can_view_sources", "can_view_settings", "can_view_users")
 
 app.config.update(
     SECRET_KEY=os.getenv("FLASK_SECRET_KEY", "change-this-secret-before-production"),
@@ -100,6 +100,7 @@ def init_database():
                 password_hash TEXT NOT NULL,
                 is_admin INTEGER NOT NULL DEFAULT 0,
                 can_view_search INTEGER NOT NULL DEFAULT 1,
+                can_view_sources INTEGER NOT NULL DEFAULT 0,
                 can_view_settings INTEGER NOT NULL DEFAULT 0,
                 can_view_users INTEGER NOT NULL DEFAULT 0,
                 is_active INTEGER NOT NULL DEFAULT 1,
@@ -113,6 +114,11 @@ def init_database():
         if "can_view_search" not in existing_columns:
             try:
                 connection.execute("ALTER TABLE users ADD COLUMN can_view_search INTEGER NOT NULL DEFAULT 1")
+            except sqlite3.OperationalError:
+                pass
+        if "can_view_sources" not in existing_columns:
+            try:
+                connection.execute("ALTER TABLE users ADD COLUMN can_view_sources INTEGER NOT NULL DEFAULT 0")
             except sqlite3.OperationalError:
                 pass
         if "can_view_settings" not in existing_columns:
@@ -157,6 +163,7 @@ def init_database():
                 """
                 UPDATE users
                 SET can_view_search = 1,
+                    can_view_sources = CASE WHEN is_admin = 1 THEN 1 ELSE can_view_sources END,
                     can_view_settings = CASE WHEN is_admin = 1 THEN 1 ELSE can_view_settings END,
                     can_view_users = CASE WHEN is_admin = 1 THEN 1 ELSE can_view_users END
                 """
@@ -206,7 +213,7 @@ def get_user_by_id(user_id):
     with get_connection() as connection:
         row = connection.execute(
             """
-            SELECT id, username, is_admin, can_view_search, can_view_settings,
+            SELECT id, username, is_admin, can_view_search, can_view_sources, can_view_settings,
                    can_view_users, is_active, created_at
             FROM users
             WHERE id = ?
@@ -245,6 +252,7 @@ def get_user_permissions(user):
 
     return {
         "can_view_search": bool(user.get("can_view_search", 0)),
+        "can_view_sources": bool(user.get("can_view_sources", 0)),
         "can_view_settings": bool(user.get("can_view_settings", 0)),
         "can_view_users": bool(user.get("can_view_users", 0)),
     }
@@ -504,7 +512,7 @@ def get_spreadsheets():
 
 
 @app.route("/api/directories")
-@permission_required("can_view_search")
+@permission_required("can_view_sources")
 def get_directories():
     """Return configured source directories."""
     global source_directories
@@ -514,7 +522,7 @@ def get_directories():
 
 
 @app.route("/api/directories", methods=["POST"])
-@permission_required("can_view_search")
+@admin_required
 def add_directory():
     """Add a source directory and reload spreadsheets."""
     payload = request.get_json(silent=True) or {}
@@ -547,7 +555,7 @@ def add_directory():
 
 
 @app.route("/api/directories", methods=["DELETE"])
-@permission_required("can_view_search")
+@admin_required
 def delete_directory():
     """Remove a source directory and reload spreadsheets."""
     payload = request.get_json(silent=True) or {}
@@ -668,7 +676,7 @@ def autocomplete():
 
 
 @app.route("/api/reload", methods=["POST"])
-@permission_required("can_view_search")
+@admin_required
 def reload_spreadsheets():
     """Re-scan configured directories and reload all spreadsheets."""
     load_spreadsheets()
@@ -738,7 +746,7 @@ def get_users():
     with get_connection() as connection:
         rows = connection.execute(
             """
-            SELECT id, username, is_admin, can_view_search, can_view_settings,
+            SELECT id, username, is_admin, can_view_search, can_view_sources, can_view_settings,
                    can_view_users, is_active, created_at
             FROM users
             ORDER BY username ASC
@@ -759,11 +767,13 @@ def create_user():
     permissions = payload.get("permissions", {}) if isinstance(payload.get("permissions", {}), dict) else {}
 
     can_view_search = bool(permissions.get("can_view_search", True))
+    can_view_sources = bool(permissions.get("can_view_sources", False))
     can_view_settings = bool(permissions.get("can_view_settings", False))
     can_view_users = bool(permissions.get("can_view_users", False))
 
     if is_admin:
         can_view_search = True
+        can_view_sources = True
         can_view_settings = True
         can_view_users = True
 
@@ -778,16 +788,17 @@ def create_user():
             connection.execute(
                 """
                 INSERT INTO users (
-                    username, password_hash, is_admin, can_view_search,
+                    username, password_hash, is_admin, can_view_search, can_view_sources,
                     can_view_settings, can_view_users, is_active
                 )
-                VALUES (?, ?, ?, ?, ?, ?, 1)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1)
                 """,
                 (
                     username,
                     generate_password_hash(password),
                     int(is_admin),
                     int(can_view_search),
+                    int(can_view_sources),
                     int(can_view_settings),
                     int(can_view_users),
                 ),

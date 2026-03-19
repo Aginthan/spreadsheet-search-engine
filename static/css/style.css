@@ -112,6 +112,7 @@ textarea {
     max-width: 1520px;
     margin: 0 auto;
     padding: 30px 24px 48px;
+    animation: shellLift 0.7s ease both;
 }
 
 .topbar {
@@ -125,6 +126,7 @@ textarea {
     border: 1px solid rgba(255, 255, 255, 0.75);
     box-shadow: var(--shadow-lg);
     backdrop-filter: blur(18px);
+    animation: fadeSlideDown 0.6s ease both;
 }
 
 :root[data-theme='dark'] .topbar {
@@ -410,6 +412,7 @@ textarea {
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow-lg);
     backdrop-filter: blur(20px);
+    animation: fadeSlideUp 0.55s ease both;
 }
 
 .panel-card,
@@ -496,6 +499,10 @@ textarea {
     overflow: auto;
 }
 
+.sources-list {
+    max-height: 420px;
+}
+
 .stack-item,
 .selectable-item,
 .user-card {
@@ -507,6 +514,7 @@ textarea {
     border-radius: 18px;
     background: rgba(255, 255, 255, 0.72);
     border: 1px solid var(--line-soft);
+    animation: fadeSlideUp 0.45s ease both;
 }
 
 :root[data-theme='dark'] .stack-item,
@@ -529,6 +537,14 @@ textarea {
 
 .selectable-item {
     cursor: pointer;
+}
+
+.stack-item:hover,
+.selectable-item:hover,
+.user-card:hover,
+.result-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
 }
 
 .selectable-item.active {
@@ -725,6 +741,8 @@ textarea {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(240, 247, 244, 0.9));
     box-shadow: var(--shadow-sm);
+    transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    animation: fadeSlideUp 0.45s ease both;
 }
 
 .result-card-top {
@@ -827,6 +845,58 @@ mark {
     margin: 0;
     font-size: 0.88rem;
     font-weight: 700;
+}
+
+.tab-panel.active .panel-card:nth-of-type(1),
+.tab-panel.active .hero-card,
+.tab-panel.active .results-shell {
+    animation-delay: 0.04s;
+}
+
+.tab-panel.active .panel-card:nth-of-type(2),
+.tab-panel.active .result-card:nth-of-type(2),
+.tab-panel.active .stack-item:nth-of-type(2),
+.tab-panel.active .selectable-item:nth-of-type(2) {
+    animation-delay: 0.08s;
+}
+
+.tab-panel.active .result-card:nth-of-type(3),
+.tab-panel.active .stack-item:nth-of-type(3),
+.tab-panel.active .selectable-item:nth-of-type(3) {
+    animation-delay: 0.12s;
+}
+
+@keyframes fadeSlideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-14px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(18px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes shellLift {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .file-input {

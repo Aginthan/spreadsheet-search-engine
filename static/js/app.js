@@ -49,6 +49,7 @@ const userForm = document.getElementById('user-form');
 const userList = document.getElementById('user-list');
 const newUserAdmin = document.getElementById('new-user-admin');
 const permSearch = document.getElementById('perm-search');
+const permSources = document.getElementById('perm-sources');
 const permSettings = document.getElementById('perm-settings');
 const permUsers = document.getElementById('perm-users');
 const tabButtons = document.querySelectorAll('.tab-btn');
@@ -117,7 +118,14 @@ async function initializeApp() {
     syncThemeToggle();
     syncUserPermissionInputs();
     initializeVisibleTab();
-    await Promise.all([loadDirectories(), loadSpreadsheets()]);
+    const startupTasks = [];
+    if (currentUser.permissions?.can_view_sources) {
+        startupTasks.push(loadDirectories());
+    }
+    if (currentUser.permissions?.can_view_search) {
+        startupTasks.push(loadSpreadsheets());
+    }
+    await Promise.all(startupTasks);
     if (currentUser.permissions?.can_view_users) {
         await loadUsers();
     }
@@ -220,7 +228,10 @@ async function addDirectory() {
         }
 
         directoryInput.value = '';
-        await Promise.all([loadDirectories(), loadSpreadsheets()]);
+        await Promise.all([
+            loadDirectories(),
+            currentUser.permissions?.can_view_search ? loadSpreadsheets() : Promise.resolve(),
+        ]);
         showToast(data.message, 'success');
     } catch (error) {
         console.error('Failed to add directory:', error);
@@ -242,7 +253,10 @@ async function removeDirectory(path) {
             throw new Error(data.error || 'Failed to remove directory.');
         }
 
-        await Promise.all([loadDirectories(), loadSpreadsheets()]);
+        await Promise.all([
+            loadDirectories(),
+            currentUser.permissions?.can_view_search ? loadSpreadsheets() : Promise.resolve(),
+        ]);
         showToast(data.message, 'success');
     } catch (error) {
         console.error('Failed to remove directory:', error);
@@ -261,7 +275,10 @@ async function reloadData() {
             throw new Error(data.error || 'Failed to reload spreadsheets.');
         }
 
-        await Promise.all([loadDirectories(), loadSpreadsheets()]);
+        await Promise.all([
+            currentUser.permissions?.can_view_sources ? loadDirectories() : Promise.resolve(),
+            currentUser.permissions?.can_view_search ? loadSpreadsheets() : Promise.resolve(),
+        ]);
         showToast(data.message, 'success');
     } catch (error) {
         console.error('Reload failed:', error);
@@ -394,6 +411,7 @@ async function createUser(event) {
                 is_admin: isAdmin,
                 permissions: {
                     can_view_search: permSearch?.checked ?? true,
+                    can_view_sources: permSources?.checked ?? false,
                     can_view_settings: permSettings?.checked ?? false,
                     can_view_users: permUsers?.checked ?? false,
                 },
@@ -494,6 +512,9 @@ function renderDirectoryList() {
 }
 
 function renderFileList() {
+    if (!fileListEl) {
+        return;
+    }
     fileListEl.innerHTML = '';
 
     if (spreadsheetData.length === 0) {
@@ -508,7 +529,7 @@ function renderFileList() {
             <input type="checkbox" ${selectedFiles.has(file.id) ? 'checked' : ''}>
             <div class="stack-main">
                 <strong>${escapeHtml(file.filename)}</strong>
-                <span class="stack-path">${escapeHtml(file.directory)}</span>
+                <span class="stack-path">Spreadsheet file</span>
             </div>
             <span class="micro-pill neutral">${file.row_count} rows</span>
         `;
@@ -536,6 +557,9 @@ function renderFileList() {
 }
 
 function renderColumnList() {
+    if (!columnListEl) {
+        return;
+    }
     columnListEl.innerHTML = '';
 
     if (allColumns.length === 0) {
@@ -689,6 +713,7 @@ function renderUsers(users) {
                 <span class="micro-pill ${user.is_admin ? 'success' : 'neutral'}">${user.is_admin ? 'Administrator' : 'User'}</span>
                 <span class="micro-pill ${user.is_active ? 'neutral' : 'warning'}">${user.is_active ? 'Active' : 'Disabled'}</span>
                 <span class="micro-pill muted">${user.permissions.can_view_search ? 'Search' : 'No search'}</span>
+                <span class="micro-pill muted">${user.permissions.can_view_sources ? 'Sources' : 'No sources'}</span>
                 <span class="micro-pill muted">${user.permissions.can_view_settings ? 'Settings' : 'No settings'}</span>
                 <span class="micro-pill muted">${user.permissions.can_view_users ? 'Users' : 'No users'}</span>
             </div>
@@ -793,7 +818,7 @@ function syncUserPermissionInputs() {
     }
 
     const isAdmin = newUserAdmin.checked;
-    const permissionInputs = [permSearch, permSettings, permUsers].filter(Boolean);
+    const permissionInputs = [permSearch, permSources, permSettings, permUsers].filter(Boolean);
 
     permissionInputs.forEach((input) => {
         input.disabled = isAdmin;
@@ -801,6 +826,7 @@ function syncUserPermissionInputs() {
 
     if (isAdmin) {
         if (permSearch) permSearch.checked = true;
+        if (permSources) permSources.checked = true;
         if (permSettings) permSettings.checked = true;
         if (permUsers) permUsers.checked = true;
         return;
