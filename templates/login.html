@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Sign in to the spreadsheet search workspace.">
+    <title>{{ app_settings.app_name }} | Login</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="auth-body">
+    <div class="auth-layout">
+        <section class="auth-brand-panel">
+            <div class="auth-brand-mark">
+                {% if app_settings.logo_url %}
+                    <img src="{{ app_settings.logo_url }}" alt="{{ app_settings.app_name }} logo" class="brand-logo-image">
+                {% else %}
+                    <div class="brand-logo-placeholder">SKA</div>
+                {% endif %}
+            </div>
+            <p class="panel-kicker">Connected spreadsheet workspace</p>
+            <h1>{{ app_settings.app_name }}</h1>
+            <p>{{ app_settings.subtitle }}</p>
+        </section>
+
+        <section class="auth-card">
+            <div>
+                <p class="panel-kicker">Secure access</p>
+                <h2>Log in to continue</h2>
+                <p class="auth-copy">Search spreadsheets, manage branding, and control who can access the workspace.</p>
+            </div>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="message-stack">
+                        {% for category, message in messages %}
+                            <div class="flash-banner {{ category }}">{{ message }}</div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            <form method="post" class="settings-form">
+                <label class="field-group">
+                    <span>Username</span>
+                    <input type="text" class="text-input" name="username" autocomplete="username" required>
+                </label>
+
+                <label class="field-group">
+                    <span>Password</span>
+                    <input type="password" class="text-input" name="password" autocomplete="current-password" required>
+                </label>
+
+                <button type="submit" class="primary-btn auth-submit">Log in</button>
+            </form>
+        </section>
+    </div>
+</body>
+</html>

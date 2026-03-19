@@ -2,87 +2,182 @@
  * Spreadsheet Search Engine - Frontend Application
  */
 
+const bootstrap = window.APP_BOOTSTRAP || { user: null, settings: {} };
+
 // --- State ---
+let appSettings = bootstrap.settings || {};
+let currentUser = bootstrap.user || {};
 let sourceDirectories = [];
 let spreadsheetData = [];
 let selectedFiles = new Set();
 let selectedColumns = new Set();
 let allColumns = [];
+let searchResults = [];
+let currentPage = 1;
+let autocompleteItems = [];
+let activeSuggestionIndex = -1;
+let autocompleteController = null;
+let autocompleteDebounce = null;
 
 // --- DOM Elements ---
+const brandTitle = document.getElementById('brand-title');
+const brandSubtitle = document.getElementById('brand-subtitle');
+const logoFrame = document.getElementById('logo-frame');
+const resultsArea = document.getElementById('results-area');
+const resultsSummary = document.getElementById('results-summary');
 const searchInput = document.getElementById('search-input');
 const searchBtn = document.getElementById('search-btn');
+const autocompleteList = document.getElementById('autocomplete-list');
 const directoryInput = document.getElementById('directory-input');
 const addDirectoryBtn = document.getElementById('add-directory-btn');
 const directoryListEl = document.getElementById('directory-list');
 const fileListEl = document.getElementById('file-list');
 const columnListEl = document.getElementById('column-list');
-const resultsArea = document.getElementById('results-area');
-const resultsCount = document.getElementById('results-count');
 const statsFiles = document.getElementById('stats-files');
 const statsRows = document.getElementById('stats-rows');
 const statsCols = document.getElementById('stats-cols');
 const toggleAllFilesBtn = document.getElementById('toggle-all-files');
 const toggleAllColsBtn = document.getElementById('toggle-all-cols');
 const reloadBtn = document.getElementById('reload-btn');
+const settingsForm = document.getElementById('settings-form');
+const settingsAppName = document.getElementById('settings-app-name');
+const settingsSubtitle = document.getElementById('settings-subtitle');
+const settingsResultsPerPage = document.getElementById('settings-results-per-page');
+const settingsLogo = document.getElementById('settings-logo');
+const settingsLogoPreview = document.getElementById('settings-logo-preview');
+const userForm = document.getElementById('user-form');
+const userList = document.getElementById('user-list');
+const newUserAdmin = document.getElementById('new-user-admin');
+const permSearch = document.getElementById('perm-search');
+const permSources = document.getElementById('perm-sources');
+const permSettings = document.getElementById('perm-settings');
+const permUsers = document.getElementById('perm-users');
+const tabButtons = document.querySelectorAll('.tab-btn');
+const tabPanels = document.querySelectorAll('.tab-panel');
+const themeToggle = document.getElementById('theme-toggle');
+const themeToggleLabel = document.getElementById('theme-toggle-label');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
+    bindEvents();
+    renderBranding();
     initializeApp();
-
-    searchInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            performSearch();
-        }
-    });
-
-    directoryInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            addDirectory();
-        }
-    });
-
-    searchBtn.addEventListener('click', performSearch);
-    addDirectoryBtn.addEventListener('click', addDirectory);
-    reloadBtn.addEventListener('click', reloadData);
-    toggleAllFilesBtn.addEventListener('click', toggleAllFiles);
-    toggleAllColsBtn.addEventListener('click', toggleAllColumns);
 });
 
+function bindEvents() {
+    tabButtons.forEach((button) => {
+        button.addEventListener('click', () => activateTab(button.dataset.tabTarget));
+    });
+
+    if (searchInput) {
+        searchInput.addEventListener('input', handleAutocompleteInput);
+        searchInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                if (activeSuggestionIndex >= 0 && autocompleteItems[activeSuggestionIndex]) {
+                    event.preventDefault();
+                    applySuggestion(autocompleteItems[activeSuggestionIndex].value);
+                    return;
+                }
+                performSearch();
+            } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                moveActiveSuggestion(1);
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                moveActiveSuggestion(-1);
+            } else if (event.key === 'Escape') {
+                hideAutocomplete();
+            }
+        });
+        searchInput.addEventListener('blur', () => {
+            window.setTimeout(hideAutocomplete, 120);
+        });
+    }
+
+    if (directoryInput) {
+        directoryInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                addDirectory();
+            }
+        });
+    }
+
+    searchBtn?.addEventListener('click', performSearch);
+    addDirectoryBtn?.addEventListener('click', addDirectory);
+    reloadBtn?.addEventListener('click', reloadData);
+    toggleAllFilesBtn?.addEventListener('click', toggleAllFiles);
+    toggleAllColsBtn?.addEventListener('click', toggleAllColumns);
+    settingsForm?.addEventListener('submit', saveSettings);
+    settingsLogo?.addEventListener('change', previewLogo);
+    userForm?.addEventListener('submit', createUser);
+    newUserAdmin?.addEventListener('change', syncUserPermissionInputs);
+    themeToggle?.addEventListener('click', toggleTheme);
+}
+
 async function initializeApp() {
-    await Promise.all([loadDirectories(), loadSpreadsheets()]);
+    syncThemeToggle();
+    syncUserPermissionInputs();
+    initializeVisibleTab();
+    const startupTasks = [];
+    if (currentUser.permissions?.can_view_sources) {
+        startupTasks.push(loadDirectories());
+    }
+    if (currentUser.permissions?.can_view_search) {
+        startupTasks.push(loadSpreadsheets());
+    }
+    await Promise.all(startupTasks);
+    if (currentUser.permissions?.can_view_users) {
+        await loadUsers();
+    }
+}
+
+function activateTab(targetId) {
+    tabButtons.forEach((button) => {
+        button.classList.toggle('active', button.dataset.tabTarget === targetId);
+    });
+
+    tabPanels.forEach((panel) => {
+        panel.classList.toggle('active', panel.id === targetId);
+    });
+}
+
+function initializeVisibleTab() {
+    const firstTab = document.querySelector('.tab-btn');
+    if (firstTab) {
+        activateTab(firstTab.dataset.tabTarget);
+    }
 }
 
 // --- API Calls ---
 
 async function loadDirectories() {
     try {
-        const res = await fetch('/api/directories');
-        sourceDirectories = await res.json();
+        const response = await fetch('/api/directories');
+        sourceDirectories = await response.json();
         renderDirectoryList();
-    } catch (err) {
-        console.error('Failed to load directories:', err);
+    } catch (error) {
+        console.error('Failed to load directories:', error);
         showToast('Failed to load source folders.', 'error');
     }
 }
 
 async function loadSpreadsheets() {
     try {
-        const res = await fetch('/api/spreadsheets');
-        spreadsheetData = await res.json();
+        const response = await fetch('/api/spreadsheets');
+        spreadsheetData = await response.json();
 
         const previousFiles = selectedFiles;
         const previousColumns = selectedColumns;
 
-        const colSet = new Set();
-        spreadsheetData.forEach((file) => file.columns.forEach((col) => colSet.add(col)));
-        allColumns = Array.from(colSet).sort();
+        const columnSet = new Set();
+        spreadsheetData.forEach((file) => file.columns.forEach((column) => columnSet.add(column)));
+        allColumns = Array.from(columnSet).sort();
 
         const availableFileIds = new Set(spreadsheetData.map((file) => file.id));
         const availableColumns = new Set(allColumns);
 
         const retainedFiles = Array.from(previousFiles).filter((id) => availableFileIds.has(id));
-        const retainedColumns = Array.from(previousColumns).filter((col) => availableColumns.has(col));
+        const retainedColumns = Array.from(previousColumns).filter((column) => availableColumns.has(column));
 
         selectedFiles = retainedFiles.length > 0 || spreadsheetData.length === 0
             ? new Set(retainedFiles)
@@ -92,51 +187,55 @@ async function loadSpreadsheets() {
             ? new Set(retainedColumns)
             : new Set(allColumns);
 
-        toggleAllFilesBtn.textContent = selectedFiles.size === spreadsheetData.length ? 'None' : 'All';
-        toggleAllColsBtn.textContent = selectedColumns.size === allColumns.length ? 'None' : 'All';
+        if (toggleAllFilesBtn) {
+            toggleAllFilesBtn.textContent = selectedFiles.size === spreadsheetData.length ? 'None' : 'All';
+        }
+        if (toggleAllColsBtn) {
+            toggleAllColsBtn.textContent = selectedColumns.size === allColumns.length ? 'None' : 'All';
+        }
 
         renderFileList();
         renderColumnList();
         updateStats();
 
         if (spreadsheetData.length === 0) {
-            showEmptyData();
-        } else {
-            showInitialState();
+            showEmptyState('No spreadsheets found yet', 'Connect folders and reload to search their files.');
         }
-    } catch (err) {
-        console.error('Failed to load spreadsheets:', err);
-        showToast('Failed to load spreadsheets. Is the server running?', 'error');
+    } catch (error) {
+        console.error('Failed to load spreadsheets:', error);
+        showToast('Failed to load spreadsheets.', 'error');
     }
 }
 
 async function addDirectory() {
-    const path = directoryInput.value.trim();
+    const path = directoryInput?.value.trim();
     if (!path) {
-        directoryInput.focus();
+        directoryInput?.focus();
         return;
     }
 
     setDirectoryFormDisabled(true);
 
     try {
-        const res = await fetch('/api/directories', {
+        const response = await fetch('/api/directories', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path }),
         });
-        const data = await res.json();
-
-        if (!res.ok) {
+        const data = await response.json();
+        if (!response.ok) {
             throw new Error(data.error || 'Failed to add directory.');
         }
 
         directoryInput.value = '';
-        await Promise.all([loadDirectories(), loadSpreadsheets()]);
+        await Promise.all([
+            loadDirectories(),
+            currentUser.permissions?.can_view_search ? loadSpreadsheets() : Promise.resolve(),
+        ]);
         showToast(data.message, 'success');
-    } catch (err) {
-        console.error('Failed to add directory:', err);
-        showToast(err.message || 'Failed to add directory.', 'error');
+    } catch (error) {
+        console.error('Failed to add directory:', error);
+        showToast(error.message || 'Failed to add directory.', 'error');
     } finally {
         setDirectoryFormDisabled(false);
     }
@@ -144,32 +243,60 @@ async function addDirectory() {
 
 async function removeDirectory(path) {
     try {
-        const res = await fetch('/api/directories', {
+        const response = await fetch('/api/directories', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path }),
         });
-        const data = await res.json();
-
-        if (!res.ok) {
+        const data = await response.json();
+        if (!response.ok) {
             throw new Error(data.error || 'Failed to remove directory.');
         }
 
-        await Promise.all([loadDirectories(), loadSpreadsheets()]);
+        await Promise.all([
+            loadDirectories(),
+            currentUser.permissions?.can_view_search ? loadSpreadsheets() : Promise.resolve(),
+        ]);
         showToast(data.message, 'success');
-    } catch (err) {
-        console.error('Failed to remove directory:', err);
-        showToast(err.message || 'Failed to remove directory.', 'error');
+    } catch (error) {
+        console.error('Failed to remove directory:', error);
+        showToast(error.message || 'Failed to remove directory.', 'error');
+    }
+}
+
+async function reloadData() {
+    reloadBtn.disabled = true;
+    reloadBtn.textContent = 'Reloading...';
+
+    try {
+        const response = await fetch('/api/reload', { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to reload spreadsheets.');
+        }
+
+        await Promise.all([
+            currentUser.permissions?.can_view_sources ? loadDirectories() : Promise.resolve(),
+            currentUser.permissions?.can_view_search ? loadSpreadsheets() : Promise.resolve(),
+        ]);
+        showToast(data.message, 'success');
+    } catch (error) {
+        console.error('Reload failed:', error);
+        showToast(error.message || 'Failed to reload spreadsheets.', 'error');
+    } finally {
+        reloadBtn.disabled = false;
+        reloadBtn.textContent = 'Reload';
     }
 }
 
 async function performSearch() {
-    const query = searchInput.value.trim();
+    const query = searchInput?.value.trim();
     if (!query) {
-        searchInput.focus();
+        searchInput?.focus();
         return;
     }
 
+    hideAutocomplete();
     showLoading();
 
     const params = new URLSearchParams({ q: query });
@@ -181,209 +308,417 @@ async function performSearch() {
     }
 
     try {
-        const res = await fetch(`/api/search?${params.toString()}`);
-        const data = await res.json();
-        renderResults(data);
-    } catch (err) {
-        console.error('Search failed:', err);
+        const response = await fetch(`/api/search?${params.toString()}`);
+        const data = await response.json();
+        searchResults = data.results || [];
+        currentPage = 1;
+        renderResults(data.query || '');
+    } catch (error) {
+        console.error('Search failed:', error);
         showToast('Search failed. Please try again.', 'error');
-        showInitialState();
+        showEmptyState('Search failed', 'Please try again after reloading the spreadsheet sources.');
     }
 }
 
-async function reloadData() {
-    reloadBtn.disabled = true;
-    reloadBtn.innerHTML = '<span class="loading-spinner"></span> Reloading…';
+async function fetchAutocomplete(query) {
+    if (autocompleteController) {
+        autocompleteController.abort();
+    }
+
+    autocompleteController = new AbortController();
+
+    const params = new URLSearchParams({ q: query });
+    if (selectedColumns.size > 0 && selectedColumns.size < allColumns.length) {
+        params.set('columns', Array.from(selectedColumns).join(','));
+    }
+    if (selectedFiles.size > 0 && selectedFiles.size < spreadsheetData.length) {
+        params.set('files', Array.from(selectedFiles).join(','));
+    }
 
     try {
-        await fetch('/api/reload', { method: 'POST' });
-        await Promise.all([loadDirectories(), loadSpreadsheets()]);
-        showToast('Spreadsheets reloaded successfully!', 'success');
-        showInitialState();
-    } catch (err) {
-        console.error('Reload failed:', err);
-        showToast('Failed to reload spreadsheets.', 'error');
-    } finally {
-        reloadBtn.disabled = false;
-        reloadBtn.innerHTML = '<span class="reload-icon">⟳</span> Reload';
+        const response = await fetch(`/api/autocomplete?${params.toString()}`, {
+            signal: autocompleteController.signal,
+        });
+        const data = await response.json();
+        autocompleteItems = data.suggestions || [];
+        activeSuggestionIndex = -1;
+        renderAutocomplete();
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Autocomplete failed:', error);
+        }
+    }
+}
+
+async function saveSettings(event) {
+    event.preventDefault();
+    const formData = new FormData(settingsForm);
+
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to save settings.');
+        }
+
+        appSettings = data.settings;
+        renderBranding();
+        if (settingsResultsPerPage) {
+            settingsResultsPerPage.value = appSettings.results_per_page;
+        }
+        if (searchResults.length > 0) {
+            renderResults(searchInput.value.trim());
+        }
+        showToast(data.message, 'success');
+    } catch (error) {
+        console.error('Failed to save settings:', error);
+        showToast(error.message || 'Failed to save settings.', 'error');
+    }
+}
+
+async function loadUsers() {
+    if (!userList) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/users');
+        const users = await response.json();
+        renderUsers(users);
+    } catch (error) {
+        console.error('Failed to load users:', error);
+        userList.innerHTML = '<div class="loading-line">Unable to load users.</div>';
+    }
+}
+
+async function createUser(event) {
+    event.preventDefault();
+
+    const username = document.getElementById('new-username').value.trim();
+    const password = document.getElementById('new-password').value;
+    const isAdmin = newUserAdmin.checked;
+
+    try {
+        const response = await fetch('/api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username,
+                password,
+                is_admin: isAdmin,
+                permissions: {
+                    can_view_search: permSearch?.checked ?? true,
+                    can_view_sources: permSources?.checked ?? false,
+                    can_view_settings: permSettings?.checked ?? false,
+                    can_view_users: permUsers?.checked ?? false,
+                },
+            }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to create user.');
+        }
+
+        userForm.reset();
+        syncUserPermissionInputs();
+        await loadUsers();
+        showToast(data.message, 'success');
+    } catch (error) {
+        console.error('Failed to create user:', error);
+        showToast(error.message || 'Failed to create user.', 'error');
     }
 }
 
 // --- Rendering ---
 
-function renderDirectoryList() {
-    directoryListEl.innerHTML = '';
+function renderBranding() {
+    if (brandTitle) {
+        brandTitle.textContent = appSettings.app_name || 'SKA Search Hub';
+    }
+    if (brandSubtitle) {
+        brandSubtitle.textContent = appSettings.subtitle || '';
+    }
+    if (settingsAppName) {
+        settingsAppName.value = appSettings.app_name || '';
+    }
+    if (settingsSubtitle) {
+        settingsSubtitle.value = appSettings.subtitle || '';
+    }
+    if (settingsResultsPerPage) {
+        settingsResultsPerPage.value = appSettings.results_per_page || 8;
+    }
+    renderLogoMarkup(appSettings.logo_url);
+}
 
+function renderLogoMarkup(logoUrl) {
+    if (!logoFrame) {
+        return;
+    }
+
+    if (logoUrl) {
+        logoFrame.innerHTML = `<img src="${escapeHtml(logoUrl)}" alt="Application logo" class="brand-logo-image">`;
+        if (settingsLogoPreview) {
+            settingsLogoPreview.innerHTML = `<img src="${escapeHtml(logoUrl)}" alt="Application logo" class="brand-logo-image">`;
+        }
+        return;
+    }
+
+    logoFrame.innerHTML = '<div class="brand-logo-placeholder">SKA</div>';
+    if (settingsLogoPreview) {
+        settingsLogoPreview.innerHTML = '<div class="brand-logo-placeholder">SKA</div>';
+    }
+}
+
+function renderDirectoryList() {
+    if (!directoryListEl) {
+        return;
+    }
+
+    directoryListEl.innerHTML = '';
     if (sourceDirectories.length === 0) {
-        directoryListEl.innerHTML = '<li class="empty-list-message">No source folders configured.</li>';
+        directoryListEl.innerHTML = '<li class="loading-line">No source folders configured.</li>';
         return;
     }
 
     sourceDirectories.forEach((directory) => {
-        const li = document.createElement('li');
-        li.className = 'directory-item';
+        const item = document.createElement('li');
+        item.className = 'stack-item';
 
-        const canRemove = !directory.is_default;
+        const removeAction = currentUser.is_admin && !directory.is_default
+            ? `<button class="inline-link" data-remove-path="${escapeAttribute(directory.path)}">Remove</button>`
+            : '<span class="micro-pill muted">Protected</span>';
 
-        li.innerHTML = `
-            <div class="directory-details">
-                <div class="directory-title-row">
-                    <span class="directory-title">${directory.type === 'network' ? '🌐' : '📂'} ${escapeHtml(directory.label)}</span>
-                    <span class="directory-status ${directory.exists ? 'ok' : 'missing'}">
-                        ${directory.exists ? 'Available' : 'Missing'}
-                    </span>
+        item.innerHTML = `
+            <div class="stack-main">
+                <div class="stack-title-row">
+                    <strong>${directory.type === 'network' ? 'Network' : 'Local'} source</strong>
+                    <span class="micro-pill ${directory.exists ? 'success' : 'warning'}">${directory.exists ? 'Available' : 'Missing'}</span>
                 </div>
-                <div class="directory-path" title="${escapeHtml(directory.path)}">${escapeHtml(directory.path)}</div>
+                <span class="stack-path">${escapeHtml(directory.path)}</span>
             </div>
-            <button class="directory-remove-btn" ${canRemove ? '' : 'disabled'} title="${canRemove ? 'Remove folder' : 'Default folder cannot be removed'}">
-                Remove
-            </button>
+            ${removeAction}
         `;
 
-        const removeBtn = li.querySelector('.directory-remove-btn');
-        if (canRemove) {
-            removeBtn.addEventListener('click', () => removeDirectory(directory.path));
+        const removeButton = item.querySelector('[data-remove-path]');
+        if (removeButton) {
+            removeButton.addEventListener('click', () => removeDirectory(directory.path));
         }
 
-        directoryListEl.appendChild(li);
+        directoryListEl.appendChild(item);
     });
 }
 
 function renderFileList() {
+    if (!fileListEl) {
+        return;
+    }
     fileListEl.innerHTML = '';
 
     if (spreadsheetData.length === 0) {
-        fileListEl.innerHTML = '<li class="empty-list-message">No spreadsheet files loaded.</li>';
+        fileListEl.innerHTML = '<li class="loading-line">No spreadsheet files loaded.</li>';
         return;
     }
 
     spreadsheetData.forEach((file) => {
-        const li = document.createElement('li');
-        li.className = 'file-item' + (selectedFiles.has(file.id) ? ' active' : '');
-
-        const isCSV = file.filename.toLowerCase().endsWith('.csv');
-        const icon = isCSV ? '📄' : '📊';
-
-        li.innerHTML = `
-            <input type="checkbox" id="file-${escapeAttribute(file.id)}"
-                   ${selectedFiles.has(file.id) ? 'checked' : ''}>
-            <div class="file-text">
-                <span class="file-name" title="${escapeHtml(file.filepath)}">${icon} ${escapeHtml(file.filename)}</span>
-                <span class="file-subtitle">${escapeHtml(file.directory)}</span>
+        const item = document.createElement('li');
+        item.className = `selectable-item ${selectedFiles.has(file.id) ? 'active' : ''}`;
+        item.innerHTML = `
+            <input type="checkbox" ${selectedFiles.has(file.id) ? 'checked' : ''}>
+            <div class="stack-main">
+                <strong>${escapeHtml(file.filename)}</strong>
+                <span class="stack-path">Spreadsheet file</span>
             </div>
-            <span class="file-meta">${file.row_count} rows</span>
+            <span class="micro-pill neutral">${file.row_count} rows</span>
         `;
 
-        const checkbox = li.querySelector('input');
-        li.addEventListener('click', (e) => {
-            if (e.target !== checkbox) {
+        const checkbox = item.querySelector('input');
+        item.addEventListener('click', (event) => {
+            if (event.target !== checkbox) {
                 checkbox.checked = !checkbox.checked;
             }
 
             if (checkbox.checked) {
                 selectedFiles.add(file.id);
-                li.classList.add('active');
             } else {
                 selectedFiles.delete(file.id);
-                li.classList.remove('active');
             }
 
-            toggleAllFilesBtn.textContent = selectedFiles.size === spreadsheetData.length ? 'None' : 'All';
+            item.classList.toggle('active', checkbox.checked);
+            if (toggleAllFilesBtn) {
+                toggleAllFilesBtn.textContent = selectedFiles.size === spreadsheetData.length ? 'None' : 'All';
+            }
         });
 
-        fileListEl.appendChild(li);
+        fileListEl.appendChild(item);
     });
 }
 
 function renderColumnList() {
+    if (!columnListEl) {
+        return;
+    }
     columnListEl.innerHTML = '';
 
     if (allColumns.length === 0) {
-        columnListEl.innerHTML = '<li class="empty-list-message">No columns available yet.</li>';
+        columnListEl.innerHTML = '<li class="loading-line">No columns available yet.</li>';
         return;
     }
 
-    allColumns.forEach((col) => {
-        const li = document.createElement('li');
-        li.className = 'column-item';
-
-        li.innerHTML = `
-            <input type="checkbox" id="col-${escapeAttribute(col)}"
-                   ${selectedColumns.has(col) ? 'checked' : ''}>
-            <label for="col-${escapeAttribute(col)}">${escapeHtml(col)}</label>
+    allColumns.forEach((column) => {
+        const item = document.createElement('li');
+        item.className = `selectable-item ${selectedColumns.has(column) ? 'active' : ''}`;
+        item.innerHTML = `
+            <input type="checkbox" ${selectedColumns.has(column) ? 'checked' : ''}>
+            <div class="stack-main">
+                <strong>${escapeHtml(column)}</strong>
+                <span class="stack-path">Column filter</span>
+            </div>
         `;
 
-        const checkbox = li.querySelector('input');
-        li.addEventListener('click', (e) => {
-            if (e.target !== checkbox && e.target.tagName !== 'LABEL') {
+        const checkbox = item.querySelector('input');
+        item.addEventListener('click', (event) => {
+            if (event.target !== checkbox) {
                 checkbox.checked = !checkbox.checked;
             }
 
-            setTimeout(() => {
-                if (checkbox.checked) {
-                    selectedColumns.add(col);
-                } else {
-                    selectedColumns.delete(col);
-                }
+            if (checkbox.checked) {
+                selectedColumns.add(column);
+            } else {
+                selectedColumns.delete(column);
+            }
+
+            item.classList.toggle('active', checkbox.checked);
+            if (toggleAllColsBtn) {
                 toggleAllColsBtn.textContent = selectedColumns.size === allColumns.length ? 'None' : 'All';
-            }, 0);
+            }
         });
 
-        columnListEl.appendChild(li);
+        columnListEl.appendChild(item);
     });
 }
 
-function renderResults(data) {
-    if (data.total === 0) {
-        resultsCount.innerHTML = '<span>0</span> results';
-        resultsArea.innerHTML = `
-            <div class="empty-state fade-in">
-                <div class="empty-icon">🔍</div>
-                <h3>No results found</h3>
-                <p>Try a different search term or adjust your column/file filters.</p>
-            </div>
-        `;
+function renderResults(query) {
+    if (!searchResults.length) {
+        resultsSummary.textContent = query ? '0 matches found' : 'Ready to search';
+        showEmptyState('No results found', 'Try a different search term or narrow the selected files and columns.');
         return;
     }
 
-    resultsCount.innerHTML = `<span>${data.total}</span> result${data.total !== 1 ? 's' : ''}`;
+    const pageSize = Number(appSettings.results_per_page || 8);
+    const totalPages = Math.max(1, Math.ceil(searchResults.length / pageSize));
+    currentPage = Math.min(currentPage, totalPages);
+    const startIndex = (currentPage - 1) * pageSize;
+    const pageResults = searchResults.slice(startIndex, startIndex + pageSize);
 
-    const resultCols = new Set();
-    data.results.forEach((result) => Object.keys(result.data).forEach((key) => resultCols.add(key)));
-    const columns = Array.from(resultCols);
+    resultsSummary.innerHTML = `
+        Showing <strong>${startIndex + 1}-${Math.min(startIndex + pageSize, searchResults.length)}</strong>
+        of <strong>${searchResults.length}</strong> matches
+    `;
 
-    const queryLower = data.query.toLowerCase();
-    let html = '<div class="results-table-wrapper"><table class="results-table">';
-
-    html += '<thead><tr><th>Source</th>';
-    columns.forEach((col) => {
-        html += `<th>${escapeHtml(col)}</th>`;
-    });
-    html += '</tr></thead>';
-
-    html += '<tbody>';
-    data.results.forEach((result) => {
-        html += '<tr>';
-        html += `
-            <td>
-                <div class="source-cell">
-                    <span class="source-badge">📄 ${escapeHtml(result.source_file)}</span>
-                    <span class="source-path" title="${escapeHtml(result.source_directory)}">${escapeHtml(result.source_directory)}</span>
+    const cardsMarkup = pageResults.map((result) => {
+        const fieldsMarkup = Object.entries(result.data)
+            .map(([column, value]) => `
+                <div class="result-field">
+                    <span class="result-field-label">${escapeHtml(column)}</span>
+                    <p class="result-field-value">${highlightText(value || '', query)}</p>
                 </div>
-            </td>
+            `)
+            .join('');
+
+        return `
+            <article class="result-card">
+                <div class="result-card-top">
+                    <div>
+                        <p class="panel-kicker">Source file</p>
+                        <h3>${escapeHtml(result.source_file)}</h3>
+                    </div>
+                    <span class="micro-pill success">Match</span>
+                </div>
+                <p class="result-source-path">${escapeHtml(result.source_directory)}</p>
+                <div class="result-fields-grid">
+                    ${fieldsMarkup}
+                </div>
+            </article>
         `;
+    }).join('');
 
-        columns.forEach((col) => {
-            const value = result.data[col] || '';
-            const isMatch = value.toLowerCase().includes(queryLower);
-            html += `<td class="${isMatch ? 'highlight' : ''}">${highlightText(value, data.query)}</td>`;
-        });
+    resultsArea.innerHTML = `
+        <div class="results-grid">
+            ${cardsMarkup}
+        </div>
+        <div class="pagination-bar">
+            <button class="ghost-btn" id="prev-page" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>
+            <span>Page ${currentPage} of ${totalPages}</span>
+            <button class="ghost-btn" id="next-page" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>
+        </div>
+    `;
 
-        html += '</tr>';
+    document.getElementById('prev-page')?.addEventListener('click', () => {
+        currentPage -= 1;
+        renderResults(query);
     });
-    html += '</tbody></table></div>';
 
-    resultsArea.innerHTML = html;
+    document.getElementById('next-page')?.addEventListener('click', () => {
+        currentPage += 1;
+        renderResults(query);
+    });
+}
+
+function renderAutocomplete() {
+    if (!autocompleteList) {
+        return;
+    }
+
+    if (!autocompleteItems.length) {
+        hideAutocomplete();
+        return;
+    }
+
+    autocompleteList.innerHTML = autocompleteItems.map((item, index) => `
+        <button class="autocomplete-item ${index === activeSuggestionIndex ? 'active' : ''}" type="button" data-index="${index}">
+            <span class="autocomplete-value">${highlightText(item.value, searchInput.value.trim())}</span>
+            <span class="autocomplete-meta">${escapeHtml(item.column)} · ${escapeHtml(item.source_file)}</span>
+        </button>
+    `).join('');
+
+    autocompleteList.classList.remove('hidden');
+    autocompleteList.querySelectorAll('.autocomplete-item').forEach((button) => {
+        button.addEventListener('mousedown', () => {
+            const index = Number(button.dataset.index);
+            applySuggestion(autocompleteItems[index].value);
+        });
+    });
+}
+
+function renderUsers(users) {
+    if (!userList) {
+        return;
+    }
+
+    if (!users.length) {
+        userList.innerHTML = '<div class="loading-line">No users created yet.</div>';
+        return;
+    }
+
+    userList.innerHTML = users.map((user) => `
+        <article class="user-card">
+            <div>
+                <strong>${escapeHtml(user.username)}</strong>
+                <p class="stack-path">Created ${escapeHtml(user.created_at)}</p>
+            </div>
+            <div class="user-card-badges">
+                <span class="micro-pill ${user.is_admin ? 'success' : 'neutral'}">${user.is_admin ? 'Administrator' : 'User'}</span>
+                <span class="micro-pill ${user.is_active ? 'neutral' : 'warning'}">${user.is_active ? 'Active' : 'Disabled'}</span>
+                <span class="micro-pill muted">${user.permissions.can_view_search ? 'Search' : 'No search'}</span>
+                <span class="micro-pill muted">${user.permissions.can_view_sources ? 'Sources' : 'No sources'}</span>
+                <span class="micro-pill muted">${user.permissions.can_view_settings ? 'Settings' : 'No settings'}</span>
+                <span class="micro-pill muted">${user.permissions.can_view_users ? 'Users' : 'No users'}</span>
+            </div>
+        </article>
+    `).join('');
 }
 
 function updateStats() {
@@ -396,84 +731,154 @@ function updateStats() {
     statsCols.textContent = totalCols;
 }
 
-// --- Toggle Helpers ---
+// --- Helpers ---
+
+function handleAutocompleteInput() {
+    clearTimeout(autocompleteDebounce);
+    const query = searchInput.value.trim();
+
+    if (query.length < 2) {
+        autocompleteItems = [];
+        activeSuggestionIndex = -1;
+        hideAutocomplete();
+        return;
+    }
+
+    autocompleteDebounce = window.setTimeout(() => {
+        fetchAutocomplete(query);
+    }, 180);
+}
+
+function moveActiveSuggestion(direction) {
+    if (!autocompleteItems.length) {
+        return;
+    }
+
+    activeSuggestionIndex = (activeSuggestionIndex + direction + autocompleteItems.length) % autocompleteItems.length;
+    renderAutocomplete();
+}
+
+function applySuggestion(value) {
+    searchInput.value = value;
+    hideAutocomplete();
+    performSearch();
+}
+
+function hideAutocomplete() {
+    if (!autocompleteList) {
+        return;
+    }
+    autocompleteList.classList.add('hidden');
+    autocompleteList.innerHTML = '';
+    activeSuggestionIndex = -1;
+}
 
 function toggleAllFiles() {
     const allSelected = selectedFiles.size === spreadsheetData.length;
-    if (allSelected) {
-        selectedFiles.clear();
-        toggleAllFilesBtn.textContent = 'All';
-    } else {
-        selectedFiles = new Set(spreadsheetData.map((file) => file.id));
-        toggleAllFilesBtn.textContent = 'None';
+    selectedFiles = allSelected ? new Set() : new Set(spreadsheetData.map((file) => file.id));
+    if (toggleAllFilesBtn) {
+        toggleAllFilesBtn.textContent = allSelected ? 'All' : 'None';
     }
     renderFileList();
 }
 
 function toggleAllColumns() {
     const allSelected = selectedColumns.size === allColumns.length;
-    if (allSelected) {
-        selectedColumns.clear();
-        toggleAllColsBtn.textContent = 'All';
-    } else {
-        selectedColumns = new Set(allColumns);
-        toggleAllColsBtn.textContent = 'None';
+    selectedColumns = allSelected ? new Set() : new Set(allColumns);
+    if (toggleAllColsBtn) {
+        toggleAllColsBtn.textContent = allSelected ? 'All' : 'None';
     }
     renderColumnList();
 }
 
+function toggleTheme() {
+    const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    if (nextTheme === 'dark') {
+        document.documentElement.dataset.theme = 'dark';
+    } else {
+        delete document.documentElement.dataset.theme;
+    }
+    localStorage.setItem('ska-theme', nextTheme);
+    syncThemeToggle();
+}
+
+function syncThemeToggle() {
+    if (!themeToggle || !themeToggleLabel) {
+        return;
+    }
+    const isDark = document.documentElement.dataset.theme === 'dark';
+    themeToggle.setAttribute('aria-pressed', String(isDark));
+    themeToggle.classList.toggle('active', isDark);
+    themeToggleLabel.textContent = isDark ? 'Light mode' : 'Dark mode';
+}
+
+function syncUserPermissionInputs() {
+    if (!newUserAdmin) {
+        return;
+    }
+
+    const isAdmin = newUserAdmin.checked;
+    const permissionInputs = [permSearch, permSources, permSettings, permUsers].filter(Boolean);
+
+    permissionInputs.forEach((input) => {
+        input.disabled = isAdmin;
+    });
+
+    if (isAdmin) {
+        if (permSearch) permSearch.checked = true;
+        if (permSources) permSources.checked = true;
+        if (permSettings) permSettings.checked = true;
+        if (permUsers) permUsers.checked = true;
+        return;
+    }
+
+    if (permSearch && !permSearch.checked) {
+        permSearch.checked = true;
+    }
+}
+
 function setDirectoryFormDisabled(disabled) {
+    if (!directoryInput || !addDirectoryBtn) {
+        return;
+    }
     directoryInput.disabled = disabled;
     addDirectoryBtn.disabled = disabled;
-    addDirectoryBtn.textContent = disabled ? 'Adding…' : 'Add';
+    addDirectoryBtn.textContent = disabled ? 'Adding...' : 'Add';
 }
 
-// --- UI States ---
+function previewLogo() {
+    const file = settingsLogo?.files?.[0];
+    if (!file) {
+        renderLogoMarkup(appSettings.logo_url);
+        return;
+    }
 
-function showInitialState() {
-    resultsCount.innerHTML = '';
-    resultsArea.innerHTML = `
-        <div class="empty-state fade-in">
-            <div class="empty-icon">🔎</div>
-            <h3>Search across your spreadsheets</h3>
-            <p>Enter a search term above to find matching data across all loaded files.</p>
-        </div>
-    `;
-}
-
-function showEmptyData() {
-    resultsCount.innerHTML = '';
-    resultsArea.innerHTML = `
-        <div class="no-data-banner fade-in">
-            ⚠️ No spreadsheets found. Add a local folder, mounted share, or UNC path and click <strong>Reload</strong>.
-        </div>
-        <div class="empty-state fade-in">
-            <div class="empty-icon">📂</div>
-            <h3>No data loaded</h3>
-            <p>Add source folders in the sidebar, then reload to search their spreadsheet files.</p>
-        </div>
-    `;
+    const previewUrl = URL.createObjectURL(file);
+    settingsLogoPreview.innerHTML = `<img src="${previewUrl}" alt="Logo preview" class="brand-logo-image">`;
 }
 
 function showLoading() {
+    resultsArea.innerHTML = '<div class="loading-panel">Searching connected spreadsheets...</div>';
+}
+
+function showEmptyState(title, copy) {
     resultsArea.innerHTML = `
-        <div class="loading-state">
-            <span class="loading-spinner"></span>
-            Searching…
+        <div class="empty-state">
+            <div class="empty-mark">SKA</div>
+            <h3>${escapeHtml(title)}</h3>
+            <p>${escapeHtml(copy)}</p>
         </div>
     `;
 }
 
-// --- Utilities ---
-
-function escapeHtml(str) {
+function escapeHtml(value) {
     const div = document.createElement('div');
-    div.textContent = str;
+    div.textContent = value;
     return div.innerHTML;
 }
 
-function escapeAttribute(str) {
-    return String(str).replace(/[^a-zA-Z0-9_-]/g, '_');
+function escapeAttribute(value) {
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
 function highlightText(text, query) {
@@ -481,22 +886,19 @@ function highlightText(text, query) {
         return escapeHtml(text);
     }
 
-    const escaped = escapeHtml(text);
-    const escapedQuery = escapeHtml(query);
-    const regex = new RegExp(`(${escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    return escaped.replace(regex, '<mark style="background:rgba(99,102,241,0.25);color:#c7d2fe;padding:1px 2px;border-radius:2px;">$1</mark>');
+    const escapedText = escapeHtml(text);
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return escapedText.replace(regex, '<mark>$1</mark>');
 }
 
 function showToast(message, type = 'success') {
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    toast.innerHTML = `${type === 'success' ? '✓' : '✗'} ${escapeHtml(message)}`;
+    toast.textContent = message;
     document.body.appendChild(toast);
 
     setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateX(40px)';
-        toast.style.transition = 'all 0.3s ease';
+        toast.classList.add('fade-out');
         setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, 2600);
 }

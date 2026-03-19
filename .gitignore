@@ -12,6 +12,8 @@ venv/
 env/
 .venv/
 data_sources.json
+app_data.db
+static/uploads/
 
 # IDE
 .vscode/
