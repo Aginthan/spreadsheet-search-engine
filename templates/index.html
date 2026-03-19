@@ -155,7 +155,13 @@
                         </div>
                         <div id="results-area" class="results-area">
                             <div class="empty-state">
-                                <div class="empty-mark">SKA</div>
+                                <div class="empty-mark">
+                                    {% if app_settings.logo_url %}
+                                        <img src="{{ app_settings.logo_url }}" alt="{{ app_settings.app_name }} logo" class="brand-logo-image">
+                                    {% else %}
+                                        <div class="brand-logo-placeholder">SKA</div>
+                                    {% endif %}
+                                </div>
                                 <h3>Search across your connected spreadsheets</h3>
                                 <p>Run a search to see paginated result cards that stay readable on smaller screens.</p>
                             </div>

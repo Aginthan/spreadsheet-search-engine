@@ -394,27 +394,8 @@ def dedupe_headers(headers):
     return unique_headers
 
 
-def score_header_row(row):
-    """Score a potential header row."""
-    values = [str(value).strip() if not pd.isna(value) else "" for value in row.tolist()]
-    non_empty = [value for value in values if value]
-    unnamed_count = sum(1 for value in values if not value or value.lower().startswith("unnamed"))
-    named_values = [value.lower() for value in non_empty if not value.lower().startswith("unnamed")]
-    unique_named = len(set(named_values))
-    numeric_like = 0
-
-    for value in non_empty:
-        try:
-            float(value)
-            numeric_like += 1
-        except ValueError:
-            continue
-
-    return (len(non_empty) * 3) + (unique_named * 2) - (unnamed_count * 2) - (numeric_like * 2)
-
-
 def load_with_inferred_headers(filepath):
-    """Load a spreadsheet and infer the most likely header row."""
+    """Load a spreadsheet using only the first row as the header."""
     if filepath.lower().endswith(".csv"):
         raw_df = pd.read_csv(filepath, dtype=str, header=None).fillna("")
     else:
@@ -423,23 +404,13 @@ def load_with_inferred_headers(filepath):
     if raw_df.empty:
         return raw_df
 
-    candidate_count = min(8, len(raw_df))
-    best_row_index = 0
-    best_score = None
-
-    for row_index in range(candidate_count):
-        score = score_header_row(raw_df.iloc[row_index])
-        if best_score is None or score > best_score:
-            best_score = score
-            best_row_index = row_index
-
     inferred_headers = [
         normalize_inferred_header(value, index)
-        for index, value in enumerate(raw_df.iloc[best_row_index].tolist())
+        for index, value in enumerate(raw_df.iloc[0].tolist())
     ]
     inferred_headers = dedupe_headers(inferred_headers)
 
-    data_df = raw_df.iloc[best_row_index + 1:].reset_index(drop=True)
+    data_df = raw_df.iloc[1:].reset_index(drop=True)
     data_df.columns = inferred_headers
     data_df = data_df.replace({pd.NA: "", "nan": ""}).fillna("")
 
@@ -701,8 +672,7 @@ def search():
         for _, row in matched_rows.iterrows():
             results.append({
                 "source_file": info["filename"],
-                "source_directory": info["directory"],
-                "source_label": f'{info["filename"]} ({info["directory_label"]})',
+                "source_label": info["filename"],
                 "data": {column: str(row[column]) for column in df.columns},
             })
 
