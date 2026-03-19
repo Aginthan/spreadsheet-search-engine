@@ -68,6 +68,14 @@ body {
         linear-gradient(180deg, #f7fbf7 0%, #e6f0ea 100%);
 }
 
+#particle-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.5;
+}
+
 :root[data-theme='dark'] body {
     background:
         radial-gradient(circle at top left, rgba(21, 147, 77, 0.14), transparent 28%),
@@ -723,6 +731,12 @@ textarea {
     margin-bottom: 18px;
 }
 
+.results-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
 .results-summary {
     color: var(--text-secondary);
     text-align: right;
@@ -926,6 +940,25 @@ mark {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+}
+
+.user-card-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.user-action-btn {
+    min-width: 110px;
+}
+
+.danger-btn {
+    border-color: rgba(195, 69, 52, 0.26);
+    color: #b94135;
+}
+
+:root[data-theme='dark'] .danger-btn {
+    color: #ff9b92;
 }
 
 .loading-line,

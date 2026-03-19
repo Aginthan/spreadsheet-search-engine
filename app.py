@@ -809,6 +809,62 @@ def create_user():
     return jsonify({"message": "User account created successfully."}), 201
 
 
+@app.route("/api/users/<int:user_id>", methods=["PATCH"])
+@permission_required("can_view_users")
+def update_user(user_id):
+    """Update a user's active status."""
+    payload = request.get_json(silent=True) or {}
+    current_user = get_current_user()
+
+    if "is_active" not in payload:
+        return api_error("An is_active value is required.", 400)
+
+    is_active = bool(payload["is_active"])
+
+    if current_user and current_user["id"] == user_id and not is_active:
+        return api_error("You cannot deactivate your own active session.", 400)
+
+    with get_connection() as connection:
+        user_row = connection.execute(
+            "SELECT id, username FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+
+        if not user_row:
+            return api_error("User not found.", 404)
+
+        connection.execute(
+            "UPDATE users SET is_active = ? WHERE id = ?",
+            (int(is_active), user_id),
+        )
+
+    return jsonify({
+        "message": f"User {'activated' if is_active else 'deactivated'} successfully."
+    })
+
+
+@app.route("/api/users/<int:user_id>", methods=["DELETE"])
+@permission_required("can_view_users")
+def delete_user(user_id):
+    """Delete a user account."""
+    current_user = get_current_user()
+    if current_user and current_user["id"] == user_id:
+        return api_error("You cannot delete your own active session.", 400)
+
+    with get_connection() as connection:
+        user_row = connection.execute(
+            "SELECT id FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+
+        if not user_row:
+            return api_error("User not found.", 404)
+
+        connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+    return jsonify({"message": "User deleted successfully."})
+
+
 # --------------- Startup ---------------
 
 init_database()

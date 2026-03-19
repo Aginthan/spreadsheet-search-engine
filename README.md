@@ -1,174 +1,246 @@
-# 📊 Spreadsheet Search Engine
+# SKA Search Hub
 
-A modern web application that lets you search across multiple spreadsheets (CSV & Excel) and view aggregated results in one place. Built with Python (Flask + pandas) and a sleek dark-themed frontend.
+SKA Search Hub is a Flask-based spreadsheet search workspace for CSV and Excel files. It supports multiple source folders, role-based access, user administration, branding, autocomplete search, dark mode, and a polished dashboard UI.
 
-![Spreadsheet Search Engine](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)
-![Flask](https://img.shields.io/badge/Flask-3.1-green?logo=flask)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+## Features
 
----
+- Multi-folder spreadsheet loading from local paths and mounted network shares
+- Search across CSV and Excel files with file and column filters
+- Autocomplete suggestions driven by real spreadsheet content
+- Separate tabs for Search, Sources, Settings, and Users
+- Panel-level access control per user
+- Administrator account with full access
+- Create, delete, activate, and deactivate user accounts
+- Custom application name, subtitle, logo upload, and pagination settings
+- Dark mode toggle
+- Three.js looping particle background
+- Responsive card-based search results
 
-## ✨ Features
+## Tech Stack
 
-- **Multi-folder support** — Reads spreadsheets from multiple local folders and network share paths
-- **Multi-format support** — Reads both `.csv` and `.xlsx` (Excel) files
-- **Cross-file search** — Search across all spreadsheets simultaneously
-- **Column filtering** — Select which columns to search in
-- **File filtering** — Choose which spreadsheets to include in searches
-- **Aggregated results** — Results from all files displayed in one table with source badges
-- **Match highlighting** — Search terms are highlighted in results
-- **Live reload** — Add or remove spreadsheets and reload without restarting
-- **Modern UI** — Dark glassmorphism theme with smooth animations
+- Python 3.13+
+- Flask
+- pandas
+- openpyxl
+- SQLite for app users and settings
+- Vanilla JavaScript
+- Three.js for background particles
 
----
+## Project Structure
 
-## 🖼️ Screenshots
-
-### Initial View
-The app auto-detects all spreadsheets in the configured source folders and displays file/column metadata:
-
-![Initial View](docs/screenshots/initial_state.png)
-
-### Search Results
-Search "New York" returns aggregated results from both CSV and Excel files:
-
-![Search Results](docs/screenshots/search_results.png)
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- **Python 3.10+** installed on your system
-- **pip** (Python package manager)
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/spreadsheet-search-engine.git
-   cd spreadsheet-search-engine
-   ```
-
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Add your spreadsheets**
-
-   By default, the app scans the `data/` directory. You can also add more local folders or network share paths from the web UI after startup.
-
-   Example default folder:
-   ```
-   data/
-   ├── your_file_1.csv
-   ├── your_file_2.xlsx
-   └── ...
-   ```
-
-4. **Run the application**
-   ```bash
-   python app.py
-   ```
-
-5. **Open in browser**
-
-   Navigate to [http://localhost:5000](http://localhost:5000)
-
----
-
-## 📖 Usage
-
-### Searching
-1. Type your search query in the search bar
-2. Press **Enter** or click the **Search** button
-3. Results from all matching spreadsheets appear in a single table
-
-### Filtering by Columns
-- Use the **Search Columns** panel in the sidebar to select/deselect columns
-- Click **None** to deselect all, then pick specific columns
-- Only selected columns are searched
-
-### Filtering by Files
-- Use the **Spreadsheets** panel to include/exclude specific files
-- Click **None** to deselect all, then pick specific files
-
-### Managing Source Folders
-- Use the **Source Folders** panel in the sidebar to add multiple directories
-- Local paths, mounted drives, and Windows UNC paths such as `\\SERVER\Shared\Reports` are supported
-- The folder list is persisted in `data_sources.json`
-
-### Reloading Data
-- After adding or removing spreadsheet files from any configured source folder, click the **⟳ Reload** button in the sidebar
-- The app will re-scan every configured folder and update the file/column lists
-
----
-
-## 📁 Project Structure
-
-```
+```text
 spreadsheet-search-engine/
-├── app.py                  # Flask backend & search API
-├── requirements.txt        # Python dependencies
-├── README.md               # This file
-├── .gitignore              # Git ignore rules
-├── data/                   # Default local spreadsheet folder
-│   ├── employees.csv       # Sample CSV data
-│   └── companies.xlsx      # Sample Excel data
-├── data_sources.json       # Saved list of configured source folders
+├── app.py
+├── requirements.txt
+├── README.md
+├── data/
 ├── static/
 │   ├── css/
-│   │   └── style.css       # Dark theme & glassmorphism styles
+│   │   └── style.css
 │   └── js/
-│       └── app.js          # Frontend search & UI logic
+│       ├── app.js
+│       └── particles.js
 └── templates/
-    └── index.html          # Main HTML page
+    ├── index.html
+    └── login.html
 ```
 
----
+## Local Setup
 
-## 🔌 API Endpoints
+1. Create and activate a virtual environment:
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Serves the main web interface |
-| `GET` | `/api/spreadsheets` | Returns metadata for all loaded files |
-| `GET` | `/api/directories` | Returns configured source folders |
-| `POST` | `/api/directories` | Adds a source folder and reloads spreadsheets |
-| `DELETE` | `/api/directories` | Removes a source folder and reloads spreadsheets |
-| `GET` | `/api/search?q=<query>&columns=<col1,col2>&files=<file_id1,file_id2>` | Searches across spreadsheets |
-| `POST` | `/api/reload` | Re-scans all configured source folders and reloads files |
+```bash
+cd spreadsheet-search-engine
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-### Search Parameters
+2. Install dependencies:
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `q` | Yes | The search term |
-| `columns` | No | Comma-separated column names to search in (defaults to all) |
-| `files` | No | Comma-separated file ids to include (defaults to all) |
+```bash
+pip install -r requirements.txt
+```
 
----
+3. Run the app:
 
-## 🛠️ Configuration
+```bash
+python app.py
+```
 
-The default local data directory is `data/` inside the project folder. Additional folders are stored in `data_sources.json`.
+4. Open:
 
-If you want to change the built-in default folder, edit the `DEFAULT_DATA_DIR` variable in `app.py`:
+```text
+http://localhost:5555
+```
+
+## First Login
+
+On first run the app seeds a default administrator account:
+
+- Username: `admin`
+- Password: `admin123`
+
+Log in with that account, then create the real user accounts you want from the `Users` tab.
+
+## User Access Model
+
+Each user can be given visibility to any combination of these panels:
+
+- `Search`
+- `Sources`
+- `Settings`
+- `Users`
+
+Administrators automatically receive access to everything.
+
+## Source Folders
+
+The app keeps its source folder configuration in `data_sources.json`. Full file paths are only shown in the `Sources` tab. The search file list intentionally hides file paths for privacy.
+
+## Main API Endpoints
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/spreadsheets` | Loaded spreadsheet metadata |
+| `GET` | `/api/directories` | Visible source folders |
+| `POST` | `/api/directories` | Add a source folder |
+| `DELETE` | `/api/directories` | Remove a source folder |
+| `GET` | `/api/search` | Search spreadsheet data |
+| `GET` | `/api/autocomplete` | Search suggestions |
+| `POST` | `/api/reload` | Reload spreadsheet sources |
+| `GET` | `/api/users` | List users |
+| `POST` | `/api/users` | Create user |
+| `PATCH` | `/api/users/<id>` | Activate or deactivate user |
+| `DELETE` | `/api/users/<id>` | Delete user |
+| `GET` | `/api/settings` | Read app settings |
+| `POST` | `/api/settings` | Update branding and app settings |
+
+## Production Notes
+
+For real production use, treat the current app as the application core and wrap it in a proper deployment stack.
+
+### 1. Stop using Flask debug mode
+
+Do not run production with:
 
 ```python
-DEFAULT_DATA_DIR = os.path.join(BASE_DIR, "data")
+app.run(debug=True, ...)
 ```
 
-The server runs on port `5000` by default. To change it:
+Use a production WSGI server instead, such as Gunicorn.
 
-```python
-app.run(debug=True, host="0.0.0.0", port=8080)  # Change to your preferred port
+### 2. Run with Gunicorn
+
+Example:
+
+```bash
+pip install gunicorn
+gunicorn -w 4 -b 0.0.0.0:5555 app:app
 ```
 
----
+### 3. Put Nginx in front
 
-## 📝 License
+Use Nginx as a reverse proxy for:
 
-This project is open source and available under the [MIT License](LICENSE).
+- HTTPS termination
+- request buffering
+- static file delivery
+- better security headers
+
+Typical flow:
+
+```text
+Browser -> Nginx -> Gunicorn -> Flask app
+```
+
+### 4. Move secrets to environment variables
+
+At minimum, set:
+
+```bash
+export FLASK_SECRET_KEY="replace-with-a-long-random-secret"
+export APP_DEFAULT_ADMIN_PASSWORD="replace-this-before-first-start"
+```
+
+Do not hardcode production secrets in source files.
+
+### 5. Lock down storage locations
+
+Think about where these files live in production:
+
+- `app_data.db`
+- `data_sources.json`
+- uploaded logos in `static/uploads/`
+
+For real deployment, put them on persistent storage outside ephemeral containers if needed.
+
+### 6. Consider moving off SQLite
+
+SQLite is fine for a small internal tool or single-instance deployment. For a larger multi-user production app, move users/settings to PostgreSQL or MySQL.
+
+### 7. Validate network-share strategy
+
+If the app reads data from network shares:
+
+- mount them at the operating-system level
+- run the service under a user or service account with the right permissions
+- avoid embedding share credentials into the app itself
+
+### 8. Bundle the frontend more formally
+
+Right now the frontend is simple static HTML/CSS/JS, which is fine. If you want a more production-grade frontend workflow, the next step would be:
+
+1. Move frontend assets into a small build setup like Vite
+2. Install dependencies such as `three` locally instead of using a CDN
+3. Bundle and minify JS/CSS for deployment
+4. Output the built assets into `static/`
+
+That would give you:
+
+- cache-busted assets
+- better dependency management
+- easier production optimization
+
+### 9. Suggested production packaging options
+
+You have a few realistic ways to ship this:
+
+#### Option A: Single Linux VM
+
+- Ubuntu server
+- Python virtual environment
+- Gunicorn
+- Nginx
+- systemd service
+
+This is the simplest path for an internal business tool.
+
+#### Option B: Dockerized app
+
+- Build a Docker image for Flask + Gunicorn
+- Run with Docker Compose
+- Add Nginx as a reverse proxy
+- Mount persistent volumes for app data and uploads
+
+This is a good middle ground if you want repeatable deployments.
+
+#### Option C: Split app and data services
+
+- Flask app in a container or VM
+- PostgreSQL for users/settings
+- mounted shared storage for spreadsheets
+- Nginx or a cloud load balancer in front
+
+This is the better path if usage grows.
+
+## Recommended Next Production Step
+
+If you want to ship this as a real internal app, the best next implementation step is:
+
+1. Add a `Dockerfile`
+2. Add a `gunicorn` startup command
+3. Add an Nginx config
+4. Move `three` from CDN to a bundled frontend build
+5. Replace SQLite with PostgreSQL if multiple people will use it regularly
+
+If you want, I can do that next and prepare this repository for a real production deployment layout. 
