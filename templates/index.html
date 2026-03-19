@@ -3,123 +3,267 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Search across multiple spreadsheets and aggregate results in one place.">
-    <title>Spreadsheet Search Engine</title>
+    <meta name="description" content="Search across multiple spreadsheets and shared folders in one place.">
+    <title>{{ app_settings.app_name }}</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>">
 </head>
 <body>
-    <div class="app-container">
+    <div class="dashboard-shell">
+        <header class="topbar">
+            <div class="brand-cluster">
+                <div class="logo-frame" id="logo-frame">
+                    {% if app_settings.logo_url %}
+                        <img src="{{ app_settings.logo_url }}" alt="{{ app_settings.app_name }} logo" class="brand-logo-image" id="brand-logo-image">
+                    {% else %}
+                        <div class="brand-logo-placeholder" id="brand-logo-placeholder">SKA</div>
+                    {% endif %}
+                </div>
+                <div>
+                    <p class="eyebrow">Spreadsheet search workspace</p>
+                    <h1 class="brand-title" id="brand-title">{{ app_settings.app_name }}</h1>
+                    <p class="brand-subtitle" id="brand-subtitle">{{ app_settings.subtitle }}</p>
+                </div>
+            </div>
 
-        <!-- Header -->
-        <header class="app-header">
-            <h1>📊 Spreadsheet Search Engine</h1>
-            <p>Search and aggregate data across all your spreadsheets</p>
-            <div class="header-stats">
-                <span class="stat-badge">
-                    📁 Files: <span class="stat-value" id="stats-files">0</span>
-                </span>
-                <span class="stat-badge">
-                    📋 Rows: <span class="stat-value" id="stats-rows">0</span>
-                </span>
-                <span class="stat-badge">
-                    🔤 Columns: <span class="stat-value" id="stats-cols">0</span>
-                </span>
+            <div class="topbar-actions">
+                <nav class="tab-nav">
+                    <button class="tab-btn active" data-tab-target="search-panel">Search</button>
+                    {% if current_user.is_admin %}
+                        <button class="tab-btn" data-tab-target="settings-panel">Settings</button>
+                        <button class="tab-btn" data-tab-target="users-panel">Users</button>
+                    {% endif %}
+                </nav>
+                <div class="user-meta">
+                    <div>
+                        <strong>{{ current_user.username }}</strong>
+                        <span class="role-pill {{ 'admin' if current_user.is_admin else 'user' }}">
+                            {{ 'Administrator' if current_user.is_admin else 'User' }}
+                        </span>
+                    </div>
+                    <form action="/logout" method="post">
+                        <button class="ghost-btn" type="submit">Log out</button>
+                    </form>
+                </div>
             </div>
         </header>
 
-        <!-- Search Bar -->
-        <section class="search-section">
-            <div class="search-container">
-                <div class="search-input-wrapper">
-                    <span class="search-icon">🔍</span>
-                    <input
-                        type="text"
-                        id="search-input"
-                        class="search-input"
-                        placeholder="Search across your spreadsheets…"
-                        autocomplete="off"
-                        autofocus
-                    >
-                    <button id="search-btn" class="search-btn">Search</button>
-                </div>
-            </div>
-        </section>
-
-        <!-- Main Layout -->
-        <div class="main-layout">
-
-            <!-- Sidebar -->
-            <aside class="sidebar">
-                <!-- Source Directories -->
-                <div class="glass-card">
-                    <div class="card-header">
-                        <h3>🗂️ Source Folders</h3>
-                    </div>
-                    <div class="directory-form">
-                        <input
-                            type="text"
-                            id="directory-input"
-                            class="directory-input"
-                            placeholder="Add a folder path or \\\\server\\share\\folder"
-                            autocomplete="off"
-                        >
-                        <button class="directory-add-btn" id="add-directory-btn">Add</button>
-                    </div>
-                    <p class="helper-text">
-                        Add local folders, mounted drives, or Windows network share paths.
-                    </p>
-                    <ul class="directory-list" id="directory-list">
-                        <li class="loading-state" style="padding:20px"><span class="loading-spinner"></span> Loading…</li>
-                    </ul>
-                </div>
-
-                <!-- Spreadsheet Files -->
-                <div class="glass-card">
-                    <div class="card-header">
-                        <h3>📁 Spreadsheets</h3>
-                        <div style="display:flex;gap:6px;">
-                            <button class="card-action" id="toggle-all-files">None</button>
-                            <button class="card-action reload-btn" id="reload-btn">
-                                <span class="reload-icon">⟳</span> Reload
-                            </button>
+        <div class="dashboard-grid">
+            <aside class="side-panel">
+                <section class="panel-card highlight-card">
+                    <p class="panel-kicker">Workspace pulse</p>
+                    <div class="stats-grid">
+                        <div class="stat-block">
+                            <span>Files</span>
+                            <strong id="stats-files">0</strong>
+                        </div>
+                        <div class="stat-block">
+                            <span>Rows</span>
+                            <strong id="stats-rows">0</strong>
+                        </div>
+                        <div class="stat-block">
+                            <span>Columns</span>
+                            <strong id="stats-cols">0</strong>
                         </div>
                     </div>
-                    <ul class="file-list" id="file-list">
-                        <li class="loading-state" style="padding:20px"><span class="loading-spinner"></span> Loading…</li>
-                    </ul>
-                </div>
+                </section>
 
-                <!-- Column Filter -->
-                <div class="glass-card">
-                    <div class="card-header">
-                        <h3>🔤 Search Columns</h3>
-                        <button class="card-action" id="toggle-all-cols">None</button>
+                <section class="panel-card">
+                    <div class="panel-header">
+                        <div>
+                            <p class="panel-kicker">Shared sources</p>
+                            <h2>Source Folders</h2>
+                        </div>
+                        {% if current_user.is_admin %}
+                            <button class="ghost-btn" id="reload-btn" type="button">Reload</button>
+                        {% endif %}
                     </div>
-                    <ul class="column-list" id="column-list">
-                        <li class="loading-state" style="padding:20px"><span class="loading-spinner"></span> Loading…</li>
+
+                    {% if current_user.is_admin %}
+                        <div class="directory-form">
+                            <input
+                                type="text"
+                                id="directory-input"
+                                class="text-input"
+                                placeholder="Add a folder path or \\server\share\folder"
+                                autocomplete="off"
+                            >
+                            <button class="primary-btn compact" id="add-directory-btn" type="button">Add</button>
+                        </div>
+                    {% else %}
+                        <p class="helper-text">Ask an administrator to add or remove source folders.</p>
+                    {% endif %}
+
+                    <ul class="stack-list" id="directory-list">
+                        <li class="loading-line">Loading folders...</li>
                     </ul>
-                </div>
+                </section>
+
+                <section class="panel-card">
+                    <div class="panel-header">
+                        <div>
+                            <p class="panel-kicker">Search scope</p>
+                            <h2>Spreadsheets</h2>
+                        </div>
+                        <button class="ghost-btn" id="toggle-all-files" type="button">None</button>
+                    </div>
+                    <ul class="stack-list selectable-list" id="file-list">
+                        <li class="loading-line">Loading spreadsheets...</li>
+                    </ul>
+                </section>
+
+                <section class="panel-card">
+                    <div class="panel-header">
+                        <div>
+                            <p class="panel-kicker">Column targeting</p>
+                            <h2>Columns</h2>
+                        </div>
+                        <button class="ghost-btn" id="toggle-all-cols" type="button">None</button>
+                    </div>
+                    <ul class="stack-list selectable-list" id="column-list">
+                        <li class="loading-line">Loading columns...</li>
+                    </ul>
+                </section>
             </aside>
 
-            <!-- Results -->
-            <main class="results-area-container">
-                <div class="results-header">
-                    <h2>Results</h2>
-                    <span class="results-count" id="results-count"></span>
-                </div>
-                <div id="results-area">
-                    <div class="empty-state">
-                        <div class="empty-icon">🔎</div>
-                        <h3>Search across your spreadsheets</h3>
-                        <p>Enter a search term above to find matching data across all loaded files.</p>
-                    </div>
-                </div>
-            </main>
+            <main class="content-panel">
+                <section class="tab-panel active" id="search-panel">
+                    <section class="hero-card">
+                        <div class="hero-copy">
+                            <p class="panel-kicker">Quick search</p>
+                            <h2>Search across folders, files, and teams</h2>
+                            <p>Use focused column filters, search every connected source, and browse results in a readable card view.</p>
+                        </div>
+                        <div class="search-bar">
+                            <input
+                                type="text"
+                                id="search-input"
+                                class="search-input"
+                                placeholder="Search customer names, locations, IDs, departments..."
+                                autocomplete="off"
+                            >
+                            <button id="search-btn" class="primary-btn" type="button">Search</button>
+                        </div>
+                    </section>
 
+                    <section class="results-shell">
+                        <div class="results-topline">
+                            <div>
+                                <p class="panel-kicker">Result explorer</p>
+                                <h2>Search Results</h2>
+                            </div>
+                            <div class="results-summary" id="results-summary">Ready to search</div>
+                        </div>
+                        <div id="results-area" class="results-area">
+                            <div class="empty-state">
+                                <div class="empty-mark">SKA</div>
+                                <h3>Search across your connected spreadsheets</h3>
+                                <p>Run a search to see paginated result cards that stay readable on smaller screens.</p>
+                            </div>
+                        </div>
+                    </section>
+                </section>
+
+                {% if current_user.is_admin %}
+                    <section class="tab-panel" id="settings-panel">
+                        <section class="panel-card wide-card">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="panel-kicker">Administration</p>
+                                    <h2>Application Settings</h2>
+                                </div>
+                            </div>
+
+                            <form id="settings-form" class="settings-form" enctype="multipart/form-data">
+                                <label class="field-group">
+                                    <span>Application name</span>
+                                    <input type="text" class="text-input" id="settings-app-name" name="app_name" value="{{ app_settings.app_name }}">
+                                </label>
+
+                                <label class="field-group">
+                                    <span>Subtitle</span>
+                                    <textarea class="text-area" id="settings-subtitle" name="subtitle">{{ app_settings.subtitle }}</textarea>
+                                </label>
+
+                                <label class="field-group">
+                                    <span>Results per page</span>
+                                    <input type="number" min="4" max="24" class="text-input" id="settings-results-per-page" name="results_per_page" value="{{ app_settings.results_per_page }}">
+                                </label>
+
+                                <label class="field-group">
+                                    <span>Application logo</span>
+                                    <input type="file" class="text-input file-input" id="settings-logo" name="logo" accept=".png,.jpg,.jpeg,.gif,.svg,.webp">
+                                </label>
+
+                                <div class="logo-preview-card">
+                                    <p class="panel-kicker">Live preview</p>
+                                    <div class="logo-preview" id="settings-logo-preview">
+                                        {% if app_settings.logo_url %}
+                                            <img src="{{ app_settings.logo_url }}" alt="Current logo" class="brand-logo-image">
+                                        {% else %}
+                                            <div class="brand-logo-placeholder">SKA</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="primary-btn">Save settings</button>
+                            </form>
+                        </section>
+                    </section>
+
+                    <section class="tab-panel" id="users-panel">
+                        <div class="admin-grid">
+                            <section class="panel-card">
+                                <div class="panel-header">
+                                    <div>
+                                        <p class="panel-kicker">Access control</p>
+                                        <h2>Create User</h2>
+                                    </div>
+                                </div>
+
+                                <form id="user-form" class="settings-form">
+                                    <label class="field-group">
+                                        <span>Username</span>
+                                        <input type="text" class="text-input" id="new-username" autocomplete="off">
+                                    </label>
+
+                                    <label class="field-group">
+                                        <span>Password</span>
+                                        <input type="password" class="text-input" id="new-password" autocomplete="new-password">
+                                    </label>
+
+                                    <label class="checkbox-row">
+                                        <input type="checkbox" id="new-user-admin">
+                                        <span>Grant administrator access</span>
+                                    </label>
+
+                                    <button type="submit" class="primary-btn">Create account</button>
+                                </form>
+                            </section>
+
+                            <section class="panel-card">
+                                <div class="panel-header">
+                                    <div>
+                                        <p class="panel-kicker">Directory</p>
+                                        <h2>User Accounts</h2>
+                                    </div>
+                                </div>
+                                <div class="user-list" id="user-list">
+                                    <div class="loading-line">Loading users...</div>
+                                </div>
+                            </section>
+                        </div>
+                    </section>
+                {% endif %}
+            </main>
         </div>
     </div>
 
+    <script>
+        window.APP_BOOTSTRAP = {
+            user: {{ current_user | tojson }},
+            settings: {{ app_settings | tojson }}
+        };
+    </script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>
