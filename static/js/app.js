@@ -491,6 +491,7 @@ function renderBranding() {
         settingsResultsPerPage.value = appSettings.results_per_page || 8;
     }
     renderLogoMarkup(appSettings.logo_url);
+    syncEmptyStateBranding();
 }
 
 function renderLogoMarkup(logoUrl) {
@@ -510,6 +511,23 @@ function renderLogoMarkup(logoUrl) {
     if (settingsLogoPreview) {
         settingsLogoPreview.innerHTML = '<div class="brand-logo-placeholder">SKA</div>';
     }
+}
+
+function getLogoMarkup(logoUrl, altText = 'Application logo') {
+    if (logoUrl) {
+        return `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(altText)}" class="brand-logo-image">`;
+    }
+
+    return '<div class="brand-logo-placeholder">SKA</div>';
+}
+
+function syncEmptyStateBranding() {
+    const emptyMark = resultsArea?.querySelector('.empty-mark');
+    if (!emptyMark) {
+        return;
+    }
+
+    emptyMark.innerHTML = getLogoMarkup(appSettings.logo_url, `${appSettings.app_name || 'Application'} logo`);
 }
 
 function renderDirectoryList() {
@@ -677,7 +695,6 @@ function renderResults(query) {
                     </div>
                     <span class="micro-pill success">Match</span>
                 </div>
-                <p class="result-source-path">${escapeHtml(result.source_directory)}</p>
                 <div class="result-fields-grid">
                     ${fieldsMarkup}
                 </div>
@@ -940,7 +957,7 @@ function clearResults() {
 function showEmptyState(title, copy) {
     resultsArea.innerHTML = `
         <div class="empty-state">
-            <div class="empty-mark">SKA</div>
+            <div class="empty-mark">${getLogoMarkup(appSettings.logo_url, `${appSettings.app_name || 'Application'} logo`)}</div>
             <h3>${escapeHtml(title)}</h3>
             <p>${escapeHtml(copy)}</p>
         </div>
