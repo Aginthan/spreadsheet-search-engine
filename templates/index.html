@@ -22,9 +22,9 @@
             <div class="brand-cluster">
                 <div class="logo-frame" id="logo-frame">
                     {% if app_settings.logo_url %}
-                        <img src="{{ app_settings.logo_url }}" alt="{{ app_settings.app_name }} logo" class="brand-logo-image" id="brand-logo-image">
+                        <img src="{{ app_settings.logo_url }}" alt="{{ app_settings.app_name }} logo" class="brand-logo-image">
                     {% else %}
-                        <div class="brand-logo-placeholder" id="brand-logo-placeholder">SKA</div>
+                        <div class="brand-logo-placeholder">SKA</div>
                     {% endif %}
                 </div>
                 <div>
@@ -38,6 +38,9 @@
                 <nav class="tab-nav">
                     {% if current_permissions.can_view_search %}
                         <button class="tab-btn active" data-tab-target="search-panel">Search</button>
+                        <button class="tab-btn" data-tab-target="saved-panel">Saved</button>
+                        <button class="tab-btn" data-tab-target="history-panel">History</button>
+                        <button class="tab-btn" data-tab-target="favorites-panel">Favorites</button>
                     {% endif %}
                     {% if current_permissions.can_view_sources %}
                         <button class="tab-btn" data-tab-target="sources-panel">Sources</button>
@@ -47,6 +50,9 @@
                     {% endif %}
                     {% if current_permissions.can_view_users %}
                         <button class="tab-btn" data-tab-target="users-panel">Users</button>
+                    {% endif %}
+                    {% if current_user.is_admin %}
+                        <button class="tab-btn" data-tab-target="audit-panel">Audit Log</button>
                     {% endif %}
                 </nav>
                 <div class="user-meta">
@@ -120,89 +126,155 @@
 
             <main class="content-panel">
                 {% if current_permissions.can_view_search %}
-                <section class="tab-panel active" id="search-panel">
-                    <section class="hero-card">
-                        <div class="hero-copy">
-                            <p class="panel-kicker">Quick search</p>
-                            <h2>Search across folders, files, and teams</h2>
-                            <p>Use focused column filters, search every connected source, and browse results in a readable card view.</p>
-                        </div>
-                        <div class="search-bar">
-                            <div class="search-input-group">
-                                <input
-                                    type="text"
-                                    id="search-input"
-                                    class="search-input"
-                                    placeholder="Search customer names, locations, IDs, departments..."
-                                    autocomplete="off"
-                                >
-                                <div class="autocomplete-list hidden" id="autocomplete-list"></div>
+                    <section class="tab-panel active" id="search-panel">
+                        <section class="hero-card">
+                            <div class="hero-copy">
+                                <p class="panel-kicker">Quick search</p>
+                                <h2>Search across folders, files, and teams</h2>
+                                <p>Use focused filters, favorite the files you use most, save repeatable searches, and export polished reports.</p>
                             </div>
-                            <button id="search-btn" class="primary-btn" type="button">Search</button>
-                        </div>
+                            <div class="search-bar">
+                                <div class="search-input-group">
+                                    <input
+                                        type="text"
+                                        id="search-input"
+                                        class="search-input"
+                                        placeholder="Search customer names, locations, IDs, departments..."
+                                        autocomplete="off"
+                                    >
+                                    <div class="autocomplete-list hidden" id="autocomplete-list"></div>
+                                </div>
+                                <button id="search-btn" class="primary-btn" type="button">Search</button>
+                            </div>
+                        </section>
+
+                        <section class="results-shell">
+                            <div class="results-topline">
+                                <div>
+                                    <p class="panel-kicker">Result explorer</p>
+                                    <h2>Search Results</h2>
+                                </div>
+                                <div class="results-actions">
+                                    <div class="results-summary" id="results-summary">Ready to search</div>
+                                    <button class="ghost-btn" id="save-current-search-btn" type="button">Save Current</button>
+                                    <button class="ghost-btn" id="export-results-btn" type="button">Export PDF</button>
+                                    <button class="ghost-btn" id="clear-results-btn" type="button">Clear</button>
+                                </div>
+                            </div>
+                            <div id="results-area" class="results-area">
+                                <div class="empty-state">
+                                    <div class="empty-mark">
+                                        {% if app_settings.logo_url %}
+                                            <img src="{{ app_settings.logo_url }}" alt="{{ app_settings.app_name }} logo" class="brand-logo-image">
+                                        {% else %}
+                                            <div class="brand-logo-placeholder">SKA</div>
+                                        {% endif %}
+                                    </div>
+                                    <h3>Search across your connected spreadsheets</h3>
+                                    <p>Run a search to see paginated result cards that stay readable on smaller screens.</p>
+                                </div>
+                            </div>
+                        </section>
                     </section>
 
-                    <section class="results-shell">
-                        <div class="results-topline">
-                            <div>
-                                <p class="panel-kicker">Result explorer</p>
-                                <h2>Search Results</h2>
-                            </div>
-                            <div class="results-actions">
-                                <div class="results-summary" id="results-summary">Ready to search</div>
-                                <button class="ghost-btn" id="clear-results-btn" type="button">Clear</button>
-                            </div>
-                        </div>
-                        <div id="results-area" class="results-area">
-                            <div class="empty-state">
-                                <div class="empty-mark">
-                                    {% if app_settings.logo_url %}
-                                        <img src="{{ app_settings.logo_url }}" alt="{{ app_settings.app_name }} logo" class="brand-logo-image">
-                                    {% else %}
-                                        <div class="brand-logo-placeholder">SKA</div>
-                                    {% endif %}
+                    <section class="tab-panel" id="saved-panel">
+                        <section class="panel-card wide-card">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="panel-kicker">Reusable workflows</p>
+                                    <h2>Saved Searches</h2>
                                 </div>
-                                <h3>Search across your connected spreadsheets</h3>
-                                <p>Run a search to see paginated result cards that stay readable on smaller screens.</p>
+                                <button class="ghost-btn" id="clear-saved-searches-btn" type="button">Clear All</button>
                             </div>
-                        </div>
+                            <form class="inline-form" id="saved-search-form">
+                                <input type="text" class="text-input" id="saved-search-name" placeholder="Name the current search">
+                                <button type="submit" class="primary-btn">Save Current Search</button>
+                            </form>
+                            <div class="helper-text">Save the current query and selected files/columns so you can run them again in one click.</div>
+                            <div class="stack-list long-list" id="saved-search-list">
+                                <div class="loading-line">Loading saved searches...</div>
+                            </div>
+                        </section>
                     </section>
-                </section>
+
+                    <section class="tab-panel" id="history-panel">
+                        <section class="panel-card wide-card">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="panel-kicker">Recent activity</p>
+                                    <h2>Search History</h2>
+                                </div>
+                                <button class="ghost-btn" id="clear-history-btn" type="button">Clear All</button>
+                            </div>
+                            <div class="stack-list long-list" id="history-list">
+                                <div class="loading-line">Loading search history...</div>
+                            </div>
+                        </section>
+                    </section>
+
+                    <section class="tab-panel" id="favorites-panel">
+                        <section class="panel-card wide-card">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="panel-kicker">Pinned assets</p>
+                                    <h2>Favorite Files</h2>
+                                </div>
+                            </div>
+                            <div class="stack-list long-list" id="favorites-list">
+                                <div class="loading-line">Loading favorite files...</div>
+                            </div>
+                        </section>
+                    </section>
                 {% endif %}
 
                 {% if current_permissions.can_view_sources %}
-                <section class="tab-panel" id="sources-panel">
-                    <section class="panel-card wide-card">
-                        <div class="panel-header">
-                            <div>
-                                <p class="panel-kicker">Shared sources</p>
-                                <h2>Source Folders</h2>
+                    <section class="tab-panel" id="sources-panel">
+                        <section class="panel-card wide-card">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="panel-kicker">Shared sources</p>
+                                    <h2>Source Folders</h2>
+                                </div>
+                                {% if current_user.is_admin %}
+                                    <button class="ghost-btn" id="reload-btn" type="button">Reload</button>
+                                {% endif %}
                             </div>
+
                             {% if current_user.is_admin %}
-                                <button class="ghost-btn" id="reload-btn" type="button">Reload</button>
+                                <div class="directory-form">
+                                    <input
+                                        type="text"
+                                        id="directory-input"
+                                        class="text-input"
+                                        placeholder="Add a folder path or \\server\share\folder"
+                                        autocomplete="off"
+                                    >
+                                    <button class="primary-btn compact" id="add-directory-btn" type="button">Add</button>
+                                </div>
+                            {% else %}
+                                <p class="helper-text">You can view connected sources here. Only administrators can change them.</p>
                             {% endif %}
-                        </div>
+
+                            <ul class="stack-list sources-list" id="directory-list">
+                                <li class="loading-line">Loading folders...</li>
+                            </ul>
+                        </section>
 
                         {% if current_user.is_admin %}
-                            <div class="directory-form">
-                                <input
-                                    type="text"
-                                    id="directory-input"
-                                    class="text-input"
-                                    placeholder="Add a folder path or \\server\share\folder"
-                                    autocomplete="off"
-                                >
-                                <button class="primary-btn compact" id="add-directory-btn" type="button">Add</button>
-                            </div>
-                        {% else %}
-                            <p class="helper-text">You can view connected sources here. Only administrators can change them.</p>
+                            <section class="panel-card wide-card">
+                                <div class="panel-header">
+                                    <div>
+                                        <p class="panel-kicker">Header control</p>
+                                        <h2>Manual Header Overrides</h2>
+                                    </div>
+                                </div>
+                                <div class="helper-text">Set a header row for problematic spreadsheets. If cleared, Xcelerate falls back to automatic detection.</div>
+                                <div class="stack-list long-list" id="header-override-list">
+                                    <div class="loading-line">Loading spreadsheets...</div>
+                                </div>
+                            </section>
                         {% endif %}
-
-                        <ul class="stack-list sources-list" id="directory-list">
-                            <li class="loading-line">Loading folders...</li>
-                        </ul>
                     </section>
-                </section>
                 {% endif %}
 
                 {% if current_permissions.can_view_settings %}
@@ -229,6 +301,11 @@
                                 <label class="field-group">
                                     <span>Results per page</span>
                                     <input type="number" min="4" max="24" class="text-input" id="settings-results-per-page" name="results_per_page" value="{{ app_settings.results_per_page }}">
+                                </label>
+
+                                <label class="field-group">
+                                    <span>Idle timeout (minutes)</span>
+                                    <input type="number" min="5" max="480" class="text-input" id="settings-idle-timeout" name="idle_timeout_minutes" value="{{ app_settings.idle_timeout_minutes }}">
                                 </label>
 
                                 <label class="field-group">
@@ -319,6 +396,22 @@
                     </section>
                 {% endif %}
 
+                {% if current_user.is_admin %}
+                    <section class="tab-panel" id="audit-panel">
+                        <section class="panel-card wide-card">
+                            <div class="panel-header">
+                                <div>
+                                    <p class="panel-kicker">Governance</p>
+                                    <h2>Audit Log</h2>
+                                </div>
+                            </div>
+                            <div class="stack-list long-list" id="audit-log-list">
+                                <div class="loading-line">Loading audit log...</div>
+                            </div>
+                        </section>
+                    </section>
+                {% endif %}
+
                 {% if not current_permissions.can_view_search and not current_permissions.can_view_sources and not current_permissions.can_view_settings and not current_permissions.can_view_users %}
                     <section class="panel-card wide-card">
                         <div class="empty-state">
@@ -330,6 +423,12 @@
                 {% endif %}
             </main>
         </div>
+
+        <footer class="app-footer">
+            <span class="footer-brand">Xcelerate</span>
+            <span>by Aginthan</span>
+            <span>Proprietary</span>
+        </footer>
     </div>
 
     <script>
