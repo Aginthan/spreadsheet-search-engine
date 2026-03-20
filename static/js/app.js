@@ -50,6 +50,7 @@ const settingsAppName = document.getElementById('settings-app-name');
 const settingsSubtitle = document.getElementById('settings-subtitle');
 const settingsResultsPerPage = document.getElementById('settings-results-per-page');
 const settingsIdleTimeout = document.getElementById('settings-idle-timeout');
+const settingsThemePreset = document.getElementById('settings-theme-preset');
 const settingsLogo = document.getElementById('settings-logo');
 const settingsLogoPreview = document.getElementById('settings-logo-preview');
 const userForm = document.getElementById('user-form');
@@ -724,8 +725,16 @@ function renderBranding() {
     if (settingsIdleTimeout) {
         settingsIdleTimeout.value = appSettings.idle_timeout_minutes || 30;
     }
+    if (settingsThemePreset) {
+        settingsThemePreset.value = appSettings.theme_preset || 'emerald';
+    }
+    applyAccentPreset(appSettings.theme_preset || 'emerald');
     renderLogoMarkup(appSettings.logo_url);
     syncEmptyStateBranding();
+}
+
+function applyAccentPreset(preset) {
+    document.documentElement.dataset.accent = preset || 'emerald';
 }
 
 function renderLogoMarkup(logoUrl) {
@@ -814,9 +823,8 @@ function renderFileList() {
             <div class="stack-main">
                 <div class="stack-title-row">
                     <strong>${escapeHtml(file.filename)}</strong>
-                    ${file.header_source === 'manual' ? '<span class="micro-pill success">Manual header</span>' : '<span class="micro-pill muted">Auto header</span>'}
                 </div>
-                <span class="stack-path">Header row ${file.header_row}</span>
+                <span class="stack-path">${file.header_source === 'manual' ? 'Manual header' : 'Auto header'} · row ${file.header_row}</span>
             </div>
             <div class="inline-actions">
                 <button class="icon-btn ${file.is_favorite ? 'active' : ''}" type="button" data-favorite="${escapeAttribute(file.id)}" title="Toggle favorite">★</button>
@@ -877,7 +885,7 @@ function renderColumnList() {
         item.innerHTML = `
             <input type="checkbox" ${selectedColumns.has(column) ? 'checked' : ''}>
             <div class="stack-main">
-                <strong>${escapeHtml(column)}</strong>
+                <strong class="stack-title-compact">${escapeHtml(column)}</strong>
                 <span class="stack-path">Column filter</span>
             </div>
         `;
@@ -1179,7 +1187,7 @@ function renderHeaderOverrides() {
                 </div>
                 <span class="stack-path">Current header row ${file.header_row}</span>
             </div>
-            <div class="inline-form compact-form">
+            <div class="inline-form compact-form header-override-actions">
                 <input type="number" class="text-input compact-input" min="1" value="${file.header_row}" data-header-input="${escapeAttribute(file.id)}">
                 <button class="ghost-btn" type="button" data-save-header="${escapeAttribute(file.id)}">Apply</button>
                 <button class="ghost-btn danger-btn" type="button" data-clear-header="${escapeAttribute(file.id)}">Clear</button>

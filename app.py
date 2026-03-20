@@ -79,7 +79,9 @@ DEFAULT_SETTINGS = {
     "results_per_page": "8",
     "logo_filename": "",
     "idle_timeout_minutes": "30",
+    "theme_preset": "emerald",
 }
+THEME_PRESETS = {"emerald", "ocean", "slate"}
 
 raw_database_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 DATABASE_URL = (
@@ -213,6 +215,11 @@ def normalize_idle_timeout(value):
     return max(5, min(minutes, 480))
 
 
+def normalize_theme_preset(value):
+    preset = str(value or DEFAULT_SETTINGS["theme_preset"]).strip().lower()
+    return preset if preset in THEME_PRESETS else DEFAULT_SETTINGS["theme_preset"]
+
+
 def allowed_logo_file(filename):
     _, ext = os.path.splitext(filename.lower())
     return ext in ALLOWED_LOGO_EXTENSIONS
@@ -335,6 +342,7 @@ def get_settings_dict(db=None):
             settings[row.key] = row.value
         settings["results_per_page"] = normalize_results_per_page(settings.get("results_per_page"))
         settings["idle_timeout_minutes"] = normalize_idle_timeout(settings.get("idle_timeout_minutes"))
+        settings["theme_preset"] = normalize_theme_preset(settings.get("theme_preset"))
 
         logo_filename = settings.get("logo_filename", "")
         logo_path = os.path.join(UPLOAD_FOLDER, logo_filename) if logo_filename else ""
@@ -1137,6 +1145,9 @@ def update_app_settings():
     idle_timeout_minutes = normalize_idle_timeout(
         request.form.get("idle_timeout_minutes", current_settings["idle_timeout_minutes"])
     )
+    theme_preset = normalize_theme_preset(
+        request.form.get("theme_preset", current_settings.get("theme_preset", DEFAULT_SETTINGS["theme_preset"]))
+    )
 
     if not app_name:
         return api_error("Application name is required.", 400)
@@ -1146,6 +1157,7 @@ def update_app_settings():
         "subtitle": subtitle or DEFAULT_SETTINGS["subtitle"],
         "results_per_page": results_per_page,
         "idle_timeout_minutes": idle_timeout_minutes,
+        "theme_preset": theme_preset,
         "logo_filename": current_settings.get("logo_filename", ""),
     }
 
@@ -1170,7 +1182,11 @@ def update_app_settings():
             "settings_updated",
             "settings",
             "application",
-            {"app_name": updated["app_name"], "idle_timeout_minutes": updated["idle_timeout_minutes"]},
+            {
+                "app_name": updated["app_name"],
+                "idle_timeout_minutes": updated["idle_timeout_minutes"],
+                "theme_preset": updated["theme_preset"],
+            },
             actor=get_current_user(),
             db=db,
         )
