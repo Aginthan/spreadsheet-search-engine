@@ -1,10 +1,9 @@
 /**
- * Spreadsheet Search Engine - Frontend Application
+ * Xcelerate frontend application.
  */
 
 const bootstrap = window.APP_BOOTSTRAP || { user: null, settings: {} };
 
-// --- State ---
 let appSettings = bootstrap.settings || {};
 let currentUser = bootstrap.user || {};
 let sourceDirectories = [];
@@ -18,14 +17,20 @@ let autocompleteItems = [];
 let activeSuggestionIndex = -1;
 let autocompleteController = null;
 let autocompleteDebounce = null;
+let savedSearches = [];
+let searchHistory = [];
+let favoriteFiles = [];
+let auditEntries = [];
+let currentSearchState = { query: '', selected_files: [], selected_columns: [] };
 
-// --- DOM Elements ---
 const brandTitle = document.getElementById('brand-title');
 const brandSubtitle = document.getElementById('brand-subtitle');
 const logoFrame = document.getElementById('logo-frame');
 const resultsArea = document.getElementById('results-area');
 const resultsSummary = document.getElementById('results-summary');
 const clearResultsBtn = document.getElementById('clear-results-btn');
+const saveCurrentSearchBtn = document.getElementById('save-current-search-btn');
+const exportResultsBtn = document.getElementById('export-results-btn');
 const searchInput = document.getElementById('search-input');
 const searchBtn = document.getElementById('search-btn');
 const autocompleteList = document.getElementById('autocomplete-list');
@@ -44,6 +49,8 @@ const settingsForm = document.getElementById('settings-form');
 const settingsAppName = document.getElementById('settings-app-name');
 const settingsSubtitle = document.getElementById('settings-subtitle');
 const settingsResultsPerPage = document.getElementById('settings-results-per-page');
+const settingsIdleTimeout = document.getElementById('settings-idle-timeout');
+const settingsThemePreset = document.getElementById('settings-theme-preset');
 const settingsLogo = document.getElementById('settings-logo');
 const settingsLogoPreview = document.getElementById('settings-logo-preview');
 const userForm = document.getElementById('user-form');
@@ -57,8 +64,16 @@ const tabButtons = document.querySelectorAll('.tab-btn');
 const tabPanels = document.querySelectorAll('.tab-panel');
 const themeToggle = document.getElementById('theme-toggle');
 const themeToggleLabel = document.getElementById('theme-toggle-label');
+const savedSearchForm = document.getElementById('saved-search-form');
+const savedSearchName = document.getElementById('saved-search-name');
+const savedSearchList = document.getElementById('saved-search-list');
+const clearSavedSearchesBtn = document.getElementById('clear-saved-searches-btn');
+const historyList = document.getElementById('history-list');
+const clearHistoryBtn = document.getElementById('clear-history-btn');
+const favoritesList = document.getElementById('favorites-list');
+const headerOverrideList = document.getElementById('header-override-list');
+const auditLogList = document.getElementById('audit-log-list');
 
-// --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
     bindEvents();
     renderBranding();
@@ -103,8 +118,10 @@ function bindEvents() {
         });
     }
 
-    searchBtn?.addEventListener('click', performSearch);
+    searchBtn?.addEventListener('click', () => performSearch());
     clearResultsBtn?.addEventListener('click', clearResults);
+    saveCurrentSearchBtn?.addEventListener('click', handleSaveCurrentSearchClick);
+    exportResultsBtn?.addEventListener('click', exportResultsPdf);
     addDirectoryBtn?.addEventListener('click', addDirectory);
     reloadBtn?.addEventListener('click', reloadData);
     toggleAllFilesBtn?.addEventListener('click', toggleAllFiles);
@@ -114,23 +131,42 @@ function bindEvents() {
     userForm?.addEventListener('submit', createUser);
     newUserAdmin?.addEventListener('change', syncUserPermissionInputs);
     themeToggle?.addEventListener('click', toggleTheme);
+    savedSearchForm?.addEventListener('submit', createSavedSearch);
+    clearSavedSearchesBtn?.addEventListener('click', clearSavedSearches);
+    clearHistoryBtn?.addEventListener('click', clearSearchHistory);
 }
 
 async function initializeApp() {
     syncThemeToggle();
     syncUserPermissionInputs();
     initializeVisibleTab();
-    const startupTasks = [];
+
+    const tasks = [];
     if (currentUser.permissions?.can_view_sources) {
-        startupTasks.push(loadDirectories());
+        tasks.push(loadDirectories());
     }
     if (currentUser.permissions?.can_view_search) {
-        startupTasks.push(loadSpreadsheets());
+        tasks.push(loadSpreadsheets());
+        tasks.push(loadSavedSearches());
+        tasks.push(loadSearchHistory());
+        tasks.push(loadFavorites());
     }
-    await Promise.all(startupTasks);
     if (currentUser.permissions?.can_view_users) {
-        await loadUsers();
+        tasks.push(loadUsers());
     }
+    if (currentUser.is_admin) {
+        tasks.push(loadAuditLog());
+    }
+    await Promise.all(tasks);
+}
+
+async function apiFetch(url, options = {}) {
+    const response = await fetch(url, options);
+    if (response.status === 401) {
+        window.location.href = '/login';
+        throw new Error('Session expired.');
+    }
+    return response;
 }
 
 function activateTab(targetId) {
@@ -150,11 +186,13 @@ function initializeVisibleTab() {
     }
 }
 
-// --- API Calls ---
-
 async function loadDirectories() {
+    if (!directoryListEl) {
+        return;
+    }
+
     try {
-        const response = await fetch('/api/directories');
+        const response = await apiFetch('/api/directories');
         sourceDirectories = await response.json();
         renderDirectoryList();
     } catch (error) {
@@ -164,20 +202,22 @@ async function loadDirectories() {
 }
 
 async function loadSpreadsheets() {
+    if (!fileListEl) {
+        return;
+    }
+
     try {
-        const response = await fetch('/api/spreadsheets');
+        const response = await apiFetch('/api/spreadsheets');
         spreadsheetData = await response.json();
 
-        const previousFiles = selectedFiles;
-        const previousColumns = selectedColumns;
-
+        const previousFiles = new Set(selectedFiles);
+        const previousColumns = new Set(selectedColumns);
         const columnSet = new Set();
         spreadsheetData.forEach((file) => file.columns.forEach((column) => columnSet.add(column)));
-        allColumns = Array.from(columnSet).sort();
+        allColumns = Array.from(columnSet).sort((left, right) => left.localeCompare(right));
 
         const availableFileIds = new Set(spreadsheetData.map((file) => file.id));
         const availableColumns = new Set(allColumns);
-
         const retainedFiles = Array.from(previousFiles).filter((id) => availableFileIds.has(id));
         const retainedColumns = Array.from(previousColumns).filter((column) => availableColumns.has(column));
 
@@ -198,6 +238,7 @@ async function loadSpreadsheets() {
 
         renderFileList();
         renderColumnList();
+        renderHeaderOverrides();
         updateStats();
 
         if (spreadsheetData.length === 0) {
@@ -219,7 +260,7 @@ async function addDirectory() {
     setDirectoryFormDisabled(true);
 
     try {
-        const response = await fetch('/api/directories', {
+        const response = await apiFetch('/api/directories', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path }),
@@ -230,10 +271,7 @@ async function addDirectory() {
         }
 
         directoryInput.value = '';
-        await Promise.all([
-            loadDirectories(),
-            currentUser.permissions?.can_view_search ? loadSpreadsheets() : Promise.resolve(),
-        ]);
+        await Promise.all([loadDirectories(), loadSpreadsheets(), loadAuditLog()]);
         showToast(data.message, 'success');
     } catch (error) {
         console.error('Failed to add directory:', error);
@@ -245,7 +283,7 @@ async function addDirectory() {
 
 async function removeDirectory(path) {
     try {
-        const response = await fetch('/api/directories', {
+        const response = await apiFetch('/api/directories', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path }),
@@ -255,10 +293,7 @@ async function removeDirectory(path) {
             throw new Error(data.error || 'Failed to remove directory.');
         }
 
-        await Promise.all([
-            loadDirectories(),
-            currentUser.permissions?.can_view_search ? loadSpreadsheets() : Promise.resolve(),
-        ]);
+        await Promise.all([loadDirectories(), loadSpreadsheets(), loadAuditLog()]);
         showToast(data.message, 'success');
     } catch (error) {
         console.error('Failed to remove directory:', error);
@@ -267,20 +302,20 @@ async function removeDirectory(path) {
 }
 
 async function reloadData() {
+    if (!reloadBtn) {
+        return;
+    }
+
     reloadBtn.disabled = true;
     reloadBtn.textContent = 'Reloading...';
-
     try {
-        const response = await fetch('/api/reload', { method: 'POST' });
+        const response = await apiFetch('/api/reload', { method: 'POST' });
         const data = await response.json();
         if (!response.ok) {
             throw new Error(data.error || 'Failed to reload spreadsheets.');
         }
 
-        await Promise.all([
-            currentUser.permissions?.can_view_sources ? loadDirectories() : Promise.resolve(),
-            currentUser.permissions?.can_view_search ? loadSpreadsheets() : Promise.resolve(),
-        ]);
+        await Promise.all([loadDirectories(), loadSpreadsheets(), loadFavorites(), loadAuditLog()]);
         showToast(data.message, 'success');
     } catch (error) {
         console.error('Reload failed:', error);
@@ -291,33 +326,33 @@ async function reloadData() {
     }
 }
 
-async function performSearch() {
-    const query = searchInput?.value.trim();
+async function performSearch(nextState = null) {
+    const state = nextState || getCurrentSearchStateFromUi();
+    const query = state.query.trim();
     if (!query) {
         searchInput?.focus();
         return;
     }
 
+    currentSearchState = state;
     hideAutocomplete();
     showLoading();
 
-    const params = new URLSearchParams({ q: query });
-    if (selectedColumns.size > 0 && selectedColumns.size < allColumns.length) {
-        params.set('columns', Array.from(selectedColumns).join(','));
-    }
-    if (selectedFiles.size > 0 && selectedFiles.size < spreadsheetData.length) {
-        params.set('files', Array.from(selectedFiles).join(','));
-    }
-
+    const params = buildSearchParams(state);
     try {
-        const response = await fetch(`/api/search?${params.toString()}`);
+        const response = await apiFetch(`/api/search?${params.toString()}`);
         const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Search failed.');
+        }
+
         searchResults = data.results || [];
         currentPage = 1;
-        renderResults(data.query || '');
+        renderResults(state.query);
+        await loadSearchHistory();
     } catch (error) {
         console.error('Search failed:', error);
-        showToast('Search failed. Please try again.', 'error');
+        showToast(error.message || 'Search failed. Please try again.', 'error');
         showEmptyState('Search failed', 'Please try again after reloading the spreadsheet sources.');
     }
 }
@@ -328,17 +363,14 @@ async function fetchAutocomplete(query) {
     }
 
     autocompleteController = new AbortController();
-
-    const params = new URLSearchParams({ q: query });
-    if (selectedColumns.size > 0 && selectedColumns.size < allColumns.length) {
-        params.set('columns', Array.from(selectedColumns).join(','));
-    }
-    if (selectedFiles.size > 0 && selectedFiles.size < spreadsheetData.length) {
-        params.set('files', Array.from(selectedFiles).join(','));
-    }
+    const params = buildSearchParams({
+        query,
+        selected_files: Array.from(selectedFiles),
+        selected_columns: Array.from(selectedColumns),
+    });
 
     try {
-        const response = await fetch(`/api/autocomplete?${params.toString()}`, {
+        const response = await apiFetch(`/api/autocomplete?${params.toString()}`, {
             signal: autocompleteController.signal,
         });
         const data = await response.json();
@@ -357,7 +389,7 @@ async function saveSettings(event) {
     const formData = new FormData(settingsForm);
 
     try {
-        const response = await fetch('/api/settings', {
+        const response = await apiFetch('/api/settings', {
             method: 'POST',
             body: formData,
         });
@@ -368,12 +400,10 @@ async function saveSettings(event) {
 
         appSettings = data.settings;
         renderBranding();
-        if (settingsResultsPerPage) {
-            settingsResultsPerPage.value = appSettings.results_per_page;
-        }
         if (searchResults.length > 0) {
-            renderResults(searchInput.value.trim());
+            renderResults(currentSearchState.query || searchInput?.value.trim() || '');
         }
+        await loadAuditLog();
         showToast(data.message, 'success');
     } catch (error) {
         console.error('Failed to save settings:', error);
@@ -387,7 +417,7 @@ async function loadUsers() {
     }
 
     try {
-        const response = await fetch('/api/users');
+        const response = await apiFetch('/api/users');
         const users = await response.json();
         renderUsers(users);
     } catch (error) {
@@ -398,7 +428,7 @@ async function loadUsers() {
 
 async function toggleUserActive(userId, nextState) {
     try {
-        const response = await fetch(`/api/users/${userId}`, {
+        const response = await apiFetch(`/api/users/${userId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ is_active: nextState }),
@@ -408,7 +438,7 @@ async function toggleUserActive(userId, nextState) {
             throw new Error(data.error || 'Failed to update user.');
         }
 
-        await loadUsers();
+        await Promise.all([loadUsers(), loadAuditLog()]);
         showToast(data.message, 'success');
     } catch (error) {
         console.error('Failed to update user:', error);
@@ -418,15 +448,13 @@ async function toggleUserActive(userId, nextState) {
 
 async function deleteUser(userId) {
     try {
-        const response = await fetch(`/api/users/${userId}`, {
-            method: 'DELETE',
-        });
+        const response = await apiFetch(`/api/users/${userId}`, { method: 'DELETE' });
         const data = await response.json();
         if (!response.ok) {
             throw new Error(data.error || 'Failed to delete user.');
         }
 
-        await loadUsers();
+        await Promise.all([loadUsers(), loadAuditLog()]);
         showToast(data.message, 'success');
     } catch (error) {
         console.error('Failed to delete user:', error);
@@ -436,13 +464,12 @@ async function deleteUser(userId) {
 
 async function createUser(event) {
     event.preventDefault();
-
     const username = document.getElementById('new-username').value.trim();
     const password = document.getElementById('new-password').value;
     const isAdmin = newUserAdmin.checked;
 
     try {
-        const response = await fetch('/api/users', {
+        const response = await apiFetch('/api/users', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -464,7 +491,7 @@ async function createUser(event) {
 
         userForm.reset();
         syncUserPermissionInputs();
-        await loadUsers();
+        await Promise.all([loadUsers(), loadAuditLog()]);
         showToast(data.message, 'success');
     } catch (error) {
         console.error('Failed to create user:', error);
@@ -472,11 +499,216 @@ async function createUser(event) {
     }
 }
 
-// --- Rendering ---
+async function loadSavedSearches() {
+    if (!savedSearchList) {
+        return;
+    }
+    try {
+        const response = await apiFetch('/api/saved-searches');
+        savedSearches = await response.json();
+        renderSavedSearches();
+    } catch (error) {
+        console.error('Failed to load saved searches:', error);
+        savedSearchList.innerHTML = '<div class="loading-line">Unable to load saved searches.</div>';
+    }
+}
+
+async function createSavedSearch(event) {
+    event.preventDefault();
+    const state = getCurrentSearchStateFromUi();
+    if (!state.query) {
+        showToast('Run or type a search before saving it.', 'error');
+        return;
+    }
+
+    const name = savedSearchName?.value.trim();
+    if (!name) {
+        savedSearchName?.focus();
+        return;
+    }
+
+    try {
+        const response = await apiFetch('/api/saved-searches', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, ...state }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to save search.');
+        }
+
+        savedSearchForm.reset();
+        await loadSavedSearches();
+        showToast(data.message, 'success');
+    } catch (error) {
+        console.error('Failed to save search:', error);
+        showToast(error.message || 'Failed to save search.', 'error');
+    }
+}
+
+async function clearSavedSearches() {
+    try {
+        const response = await apiFetch('/api/saved-searches', { method: 'DELETE' });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to clear saved searches.');
+        }
+        await loadSavedSearches();
+        showToast(data.message, 'success');
+    } catch (error) {
+        console.error('Failed to clear saved searches:', error);
+        showToast(error.message || 'Failed to clear saved searches.', 'error');
+    }
+}
+
+async function deleteSavedSearch(itemId) {
+    try {
+        const response = await apiFetch(`/api/saved-searches/${itemId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to delete saved search.');
+        }
+        await loadSavedSearches();
+        showToast(data.message, 'success');
+    } catch (error) {
+        console.error('Failed to delete saved search:', error);
+        showToast(error.message || 'Failed to delete saved search.', 'error');
+    }
+}
+
+async function loadSearchHistory() {
+    if (!historyList) {
+        return;
+    }
+    try {
+        const response = await apiFetch('/api/search-history');
+        searchHistory = await response.json();
+        renderSearchHistory();
+    } catch (error) {
+        console.error('Failed to load search history:', error);
+        historyList.innerHTML = '<div class="loading-line">Unable to load search history.</div>';
+    }
+}
+
+async function clearSearchHistory() {
+    try {
+        const response = await apiFetch('/api/search-history', { method: 'DELETE' });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to clear search history.');
+        }
+        await loadSearchHistory();
+        showToast(data.message, 'success');
+    } catch (error) {
+        console.error('Failed to clear search history:', error);
+        showToast(error.message || 'Failed to clear search history.', 'error');
+    }
+}
+
+async function deleteHistoryItem(itemId) {
+    try {
+        const response = await apiFetch(`/api/search-history/${itemId}`, { method: 'DELETE' });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to delete history item.');
+        }
+        await loadSearchHistory();
+        showToast(data.message, 'success');
+    } catch (error) {
+        console.error('Failed to delete history item:', error);
+        showToast(error.message || 'Failed to delete history item.', 'error');
+    }
+}
+
+async function loadFavorites() {
+    if (!favoritesList) {
+        return;
+    }
+
+    try {
+        const response = await apiFetch('/api/favorites');
+        favoriteFiles = await response.json();
+        renderFavorites();
+    } catch (error) {
+        console.error('Failed to load favorites:', error);
+        favoritesList.innerHTML = '<div class="loading-line">Unable to load favorite files.</div>';
+    }
+}
+
+async function toggleFavorite(fileId) {
+    try {
+        const response = await apiFetch('/api/favorites', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file_id: fileId }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to update favorite.');
+        }
+        await Promise.all([loadSpreadsheets(), loadFavorites()]);
+    } catch (error) {
+        console.error('Failed to update favorite:', error);
+        showToast(error.message || 'Failed to update favorite.', 'error');
+    }
+}
+
+async function saveHeaderOverride(fileId, headerRow) {
+    try {
+        const response = await apiFetch('/api/header-overrides', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file_id: fileId, header_row: headerRow }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to save header override.');
+        }
+        await Promise.all([loadSpreadsheets(), loadAuditLog()]);
+        showToast(data.message, 'success');
+    } catch (error) {
+        console.error('Failed to save header override:', error);
+        showToast(error.message || 'Failed to save header override.', 'error');
+    }
+}
+
+async function clearHeaderOverride(fileId) {
+    try {
+        const response = await apiFetch('/api/header-overrides', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file_id: fileId }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to clear header override.');
+        }
+        await Promise.all([loadSpreadsheets(), loadAuditLog()]);
+        showToast(data.message, 'success');
+    } catch (error) {
+        console.error('Failed to clear header override:', error);
+        showToast(error.message || 'Failed to clear header override.', 'error');
+    }
+}
+
+async function loadAuditLog() {
+    if (!auditLogList || !currentUser.is_admin) {
+        return;
+    }
+    try {
+        const response = await apiFetch('/api/audit-log');
+        auditEntries = await response.json();
+        renderAuditLog();
+    } catch (error) {
+        console.error('Failed to load audit log:', error);
+        auditLogList.innerHTML = '<div class="loading-line">Unable to load audit log.</div>';
+    }
+}
 
 function renderBranding() {
     if (brandTitle) {
-        brandTitle.textContent = appSettings.app_name || 'SKA Search Hub';
+        brandTitle.textContent = appSettings.app_name || 'Xcelerate';
     }
     if (brandSubtitle) {
         brandSubtitle.textContent = appSettings.subtitle || '';
@@ -490,8 +722,19 @@ function renderBranding() {
     if (settingsResultsPerPage) {
         settingsResultsPerPage.value = appSettings.results_per_page || 8;
     }
+    if (settingsIdleTimeout) {
+        settingsIdleTimeout.value = appSettings.idle_timeout_minutes || 30;
+    }
+    if (settingsThemePreset) {
+        settingsThemePreset.value = appSettings.theme_preset || 'emerald';
+    }
+    applyAccentPreset(appSettings.theme_preset || 'emerald');
     renderLogoMarkup(appSettings.logo_url);
     syncEmptyStateBranding();
+}
+
+function applyAccentPreset(preset) {
+    document.documentElement.dataset.accent = preset || 'emerald';
 }
 
 function renderLogoMarkup(logoUrl) {
@@ -517,7 +760,6 @@ function getLogoMarkup(logoUrl, altText = 'Application logo') {
     if (logoUrl) {
         return `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(altText)}" class="brand-logo-image">`;
     }
-
     return '<div class="brand-logo-placeholder">SKA</div>';
 }
 
@@ -526,7 +768,6 @@ function syncEmptyStateBranding() {
     if (!emptyMark) {
         return;
     }
-
     emptyMark.innerHTML = getLogoMarkup(appSettings.logo_url, `${appSettings.app_name || 'Application'} logo`);
 }
 
@@ -534,7 +775,6 @@ function renderDirectoryList() {
     if (!directoryListEl) {
         return;
     }
-
     directoryListEl.innerHTML = '';
     if (sourceDirectories.length === 0) {
         directoryListEl.innerHTML = '<li class="loading-line">No source folders configured.</li>';
@@ -544,7 +784,6 @@ function renderDirectoryList() {
     sourceDirectories.forEach((directory) => {
         const item = document.createElement('li');
         item.className = 'stack-item';
-
         const removeAction = currentUser.is_admin && !directory.is_default
             ? `<button class="inline-link" data-remove-path="${escapeAttribute(directory.path)}">Remove</button>`
             : '<span class="micro-pill muted">Protected</span>';
@@ -560,11 +799,7 @@ function renderDirectoryList() {
             ${removeAction}
         `;
 
-        const removeButton = item.querySelector('[data-remove-path]');
-        if (removeButton) {
-            removeButton.addEventListener('click', () => removeDirectory(directory.path));
-        }
-
+        item.querySelector('[data-remove-path]')?.addEventListener('click', () => removeDirectory(directory.path));
         directoryListEl.appendChild(item);
     });
 }
@@ -586,32 +821,51 @@ function renderFileList() {
         item.innerHTML = `
             <input type="checkbox" ${selectedFiles.has(file.id) ? 'checked' : ''}>
             <div class="stack-main">
-                <strong>${escapeHtml(file.filename)}</strong>
-                <span class="stack-path">Spreadsheet file</span>
+                <div class="stack-title-row">
+                    <strong>${escapeHtml(file.filename)}</strong>
+                </div>
+                <span class="stack-path">${file.header_source === 'manual' ? 'Manual header' : 'Auto header'} · row ${file.header_row}</span>
             </div>
-            <span class="micro-pill neutral">${file.row_count} rows</span>
+            <div class="inline-actions">
+                <button class="icon-btn ${file.is_favorite ? 'active' : ''}" type="button" data-favorite="${escapeAttribute(file.id)}" title="Toggle favorite">★</button>
+                <span class="micro-pill neutral">${file.row_count} rows</span>
+            </div>
         `;
 
         const checkbox = item.querySelector('input');
+        const favoriteButton = item.querySelector('[data-favorite]');
+
+        favoriteButton?.addEventListener('click', (event) => {
+            event.stopPropagation();
+            toggleFavorite(file.id);
+        });
+
         item.addEventListener('click', (event) => {
-            if (event.target !== checkbox) {
-                checkbox.checked = !checkbox.checked;
+            if (event.target === checkbox || event.target === favoriteButton) {
+                return;
             }
+            checkbox.checked = !checkbox.checked;
+            updateFileSelection(file.id, checkbox.checked, item);
+        });
 
-            if (checkbox.checked) {
-                selectedFiles.add(file.id);
-            } else {
-                selectedFiles.delete(file.id);
-            }
-
-            item.classList.toggle('active', checkbox.checked);
-            if (toggleAllFilesBtn) {
-                toggleAllFilesBtn.textContent = selectedFiles.size === spreadsheetData.length ? 'None' : 'All';
-            }
+        checkbox.addEventListener('change', () => {
+            updateFileSelection(file.id, checkbox.checked, item);
         });
 
         fileListEl.appendChild(item);
     });
+}
+
+function updateFileSelection(fileId, checked, item) {
+    if (checked) {
+        selectedFiles.add(fileId);
+    } else {
+        selectedFiles.delete(fileId);
+    }
+    item.classList.toggle('active', checked);
+    if (toggleAllFilesBtn) {
+        toggleAllFilesBtn.textContent = selectedFiles.size === spreadsheetData.length ? 'None' : 'All';
+    }
 }
 
 function renderColumnList() {
@@ -620,7 +874,7 @@ function renderColumnList() {
     }
     columnListEl.innerHTML = '';
 
-    if (allColumns.length === 0) {
+    if (!allColumns.length) {
         columnListEl.innerHTML = '<li class="loading-line">No columns available yet.</li>';
         return;
     }
@@ -631,31 +885,36 @@ function renderColumnList() {
         item.innerHTML = `
             <input type="checkbox" ${selectedColumns.has(column) ? 'checked' : ''}>
             <div class="stack-main">
-                <strong>${escapeHtml(column)}</strong>
+                <strong class="stack-title-compact">${escapeHtml(column)}</strong>
                 <span class="stack-path">Column filter</span>
             </div>
         `;
 
         const checkbox = item.querySelector('input');
         item.addEventListener('click', (event) => {
-            if (event.target !== checkbox) {
-                checkbox.checked = !checkbox.checked;
+            if (event.target === checkbox) {
+                return;
             }
-
-            if (checkbox.checked) {
-                selectedColumns.add(column);
-            } else {
-                selectedColumns.delete(column);
-            }
-
-            item.classList.toggle('active', checkbox.checked);
-            if (toggleAllColsBtn) {
-                toggleAllColsBtn.textContent = selectedColumns.size === allColumns.length ? 'None' : 'All';
-            }
+            checkbox.checked = !checkbox.checked;
+            updateColumnSelection(column, checkbox.checked, item);
         });
-
+        checkbox.addEventListener('change', () => {
+            updateColumnSelection(column, checkbox.checked, item);
+        });
         columnListEl.appendChild(item);
     });
+}
+
+function updateColumnSelection(column, checked, item) {
+    if (checked) {
+        selectedColumns.add(column);
+    } else {
+        selectedColumns.delete(column);
+    }
+    item.classList.toggle('active', checked);
+    if (toggleAllColsBtn) {
+        toggleAllColsBtn.textContent = selectedColumns.size === allColumns.length ? 'None' : 'All';
+    }
 }
 
 function renderResults(query) {
@@ -703,9 +962,7 @@ function renderResults(query) {
     }).join('');
 
     resultsArea.innerHTML = `
-        <div class="results-grid">
-            ${cardsMarkup}
-        </div>
+        <div class="results-grid">${cardsMarkup}</div>
         <div class="pagination-bar">
             <button class="ghost-btn" id="prev-page" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>
             <span>Page ${currentPage} of ${totalPages}</span>
@@ -717,7 +974,6 @@ function renderResults(query) {
         currentPage -= 1;
         renderResults(query);
     });
-
     document.getElementById('next-page')?.addEventListener('click', () => {
         currentPage += 1;
         renderResults(query);
@@ -728,7 +984,6 @@ function renderAutocomplete() {
     if (!autocompleteList) {
         return;
     }
-
     if (!autocompleteItems.length) {
         hideAutocomplete();
         return;
@@ -754,7 +1009,6 @@ function renderUsers(users) {
     if (!userList) {
         return;
     }
-
     if (!users.length) {
         userList.innerHTML = '<div class="loading-line">No users created yet.</div>';
         return;
@@ -778,59 +1032,242 @@ function renderUsers(users) {
                 <button class="ghost-btn user-action-btn" type="button" data-user-toggle="${user.id}" data-next-active="${!user.is_active}">
                     ${user.is_active ? 'Deactivate' : 'Activate'}
                 </button>
-                <button class="ghost-btn user-action-btn danger-btn" type="button" data-user-delete="${user.id}">
-                    Delete
-                </button>
+                <button class="ghost-btn user-action-btn danger-btn" type="button" data-user-delete="${user.id}">Delete</button>
             </div>
         </article>
     `).join('');
 
     userList.querySelectorAll('[data-user-toggle]').forEach((button) => {
+        button.addEventListener('click', () => toggleUserActive(Number(button.dataset.userToggle), button.dataset.nextActive === 'true'));
+    });
+    userList.querySelectorAll('[data-user-delete]').forEach((button) => {
+        button.addEventListener('click', () => deleteUser(Number(button.dataset.userDelete)));
+    });
+}
+
+function renderSavedSearches() {
+    if (!savedSearchList) {
+        return;
+    }
+    if (!savedSearches.length) {
+        savedSearchList.innerHTML = '<div class="loading-line">No saved searches yet.</div>';
+        return;
+    }
+
+    savedSearchList.innerHTML = savedSearches.map((item) => `
+        <article class="stack-item feature-card">
+            <div class="stack-main">
+                <div class="stack-title-row">
+                    <strong>${escapeHtml(item.name)}</strong>
+                    <span class="micro-pill neutral">${escapeHtml(item.query)}</span>
+                </div>
+                <span class="stack-path">${item.selected_files.length} files · ${item.selected_columns.length} columns · saved ${escapeHtml(item.created_at)}</span>
+            </div>
+            <div class="inline-actions">
+                <button class="ghost-btn" type="button" data-run-saved="${item.id}">Run</button>
+                <button class="ghost-btn danger-btn" type="button" data-delete-saved="${item.id}">Delete</button>
+            </div>
+        </article>
+    `).join('');
+
+    savedSearchList.querySelectorAll('[data-run-saved]').forEach((button) => {
         button.addEventListener('click', () => {
-            toggleUserActive(Number(button.dataset.userToggle), button.dataset.nextActive === 'true');
+            const item = savedSearches.find((saved) => saved.id === Number(button.dataset.runSaved));
+            if (item) {
+                applySearchState(item);
+            }
         });
     });
+    savedSearchList.querySelectorAll('[data-delete-saved]').forEach((button) => {
+        button.addEventListener('click', () => deleteSavedSearch(Number(button.dataset.deleteSaved)));
+    });
+}
 
-    userList.querySelectorAll('[data-user-delete]').forEach((button) => {
+function renderSearchHistory() {
+    if (!historyList) {
+        return;
+    }
+    if (!searchHistory.length) {
+        historyList.innerHTML = '<div class="loading-line">No search history yet.</div>';
+        return;
+    }
+
+    historyList.innerHTML = searchHistory.map((item) => `
+        <article class="stack-item feature-card">
+            <div class="stack-main">
+                <div class="stack-title-row">
+                    <strong>${escapeHtml(item.query)}</strong>
+                    <span class="micro-pill neutral">${item.result_count} matches</span>
+                </div>
+                <span class="stack-path">${item.selected_files.length} files · ${item.selected_columns.length} columns · ${escapeHtml(item.created_at)}</span>
+            </div>
+            <div class="inline-actions">
+                <button class="ghost-btn" type="button" data-run-history="${item.id}">Run Again</button>
+                <button class="ghost-btn danger-btn" type="button" data-delete-history="${item.id}">Delete</button>
+            </div>
+        </article>
+    `).join('');
+
+    historyList.querySelectorAll('[data-run-history]').forEach((button) => {
         button.addEventListener('click', () => {
-            deleteUser(Number(button.dataset.userDelete));
+            const item = searchHistory.find((entry) => entry.id === Number(button.dataset.runHistory));
+            if (item) {
+                applySearchState(item);
+            }
+        });
+    });
+    historyList.querySelectorAll('[data-delete-history]').forEach((button) => {
+        button.addEventListener('click', () => deleteHistoryItem(Number(button.dataset.deleteHistory)));
+    });
+}
+
+function renderFavorites() {
+    if (!favoritesList) {
+        return;
+    }
+    if (!favoriteFiles.length) {
+        favoritesList.innerHTML = '<div class="loading-line">No favorite files yet.</div>';
+        return;
+    }
+
+    favoritesList.innerHTML = favoriteFiles.map((item) => `
+        <article class="stack-item feature-card">
+            <div class="stack-main">
+                <div class="stack-title-row">
+                    <strong>${escapeHtml(item.filename)}</strong>
+                    <span class="micro-pill ${item.available ? 'success' : 'warning'}">${item.available ? 'Available' : 'Missing'}</span>
+                </div>
+                <span class="stack-path">${item.available ? `${item.row_count} rows · header row ${item.header_row}` : 'Not currently loaded'} · added ${escapeHtml(item.created_at)}</span>
+            </div>
+            <div class="inline-actions">
+                <button class="ghost-btn" type="button" data-open-favorite="${escapeAttribute(item.file_id)}">Use in Search</button>
+                <button class="ghost-btn danger-btn" type="button" data-remove-favorite="${escapeAttribute(item.file_id)}">Remove</button>
+            </div>
+        </article>
+    `).join('');
+
+    favoritesList.querySelectorAll('[data-open-favorite]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const fileId = button.dataset.openFavorite;
+            const favorite = favoriteFiles.find((item) => escapeAttribute(item.file_id) === fileId);
+            if (favorite && favorite.available) {
+                selectedFiles = new Set([favorite.file_id]);
+                renderFileList();
+                activateTab('search-panel');
+                searchInput?.focus();
+            }
+        });
+    });
+    favoritesList.querySelectorAll('[data-remove-favorite]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const fileId = button.dataset.removeFavorite;
+            const favorite = favoriteFiles.find((item) => escapeAttribute(item.file_id) === fileId);
+            if (favorite) {
+                toggleFavorite(favorite.file_id);
+            }
         });
     });
 }
 
+function renderHeaderOverrides() {
+    if (!headerOverrideList) {
+        return;
+    }
+    if (!spreadsheetData.length) {
+        headerOverrideList.innerHTML = '<div class="loading-line">No spreadsheets available for header overrides.</div>';
+        return;
+    }
+
+    headerOverrideList.innerHTML = spreadsheetData.map((file) => `
+        <article class="stack-item feature-card">
+            <div class="stack-main">
+                <div class="stack-title-row">
+                    <strong>${escapeHtml(file.filename)}</strong>
+                    <span class="micro-pill ${file.header_source === 'manual' ? 'success' : 'neutral'}">${file.header_source === 'manual' ? 'Manual row' : 'Auto detected'}</span>
+                </div>
+                <span class="stack-path">Current header row ${file.header_row}</span>
+            </div>
+            <div class="inline-form compact-form header-override-actions">
+                <input type="number" class="text-input compact-input" min="1" value="${file.header_row}" data-header-input="${escapeAttribute(file.id)}">
+                <button class="ghost-btn" type="button" data-save-header="${escapeAttribute(file.id)}">Apply</button>
+                <button class="ghost-btn danger-btn" type="button" data-clear-header="${escapeAttribute(file.id)}">Clear</button>
+            </div>
+        </article>
+    `).join('');
+
+    headerOverrideList.querySelectorAll('[data-save-header]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const fileId = button.dataset.saveHeader;
+            const targetFile = spreadsheetData.find((item) => escapeAttribute(item.id) === fileId);
+            const input = headerOverrideList.querySelector(`[data-header-input="${fileId}"]`);
+            const value = Number(input?.value || 0);
+            if (targetFile) {
+                saveHeaderOverride(targetFile.id, value);
+            }
+        });
+    });
+    headerOverrideList.querySelectorAll('[data-clear-header]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const fileId = button.dataset.clearHeader;
+            const targetFile = spreadsheetData.find((item) => escapeAttribute(item.id) === fileId);
+            if (targetFile) {
+                clearHeaderOverride(targetFile.id);
+            }
+        });
+    });
+}
+
+function renderAuditLog() {
+    if (!auditLogList) {
+        return;
+    }
+    if (!auditEntries.length) {
+        auditLogList.innerHTML = '<div class="loading-line">No audit entries yet.</div>';
+        return;
+    }
+
+    auditLogList.innerHTML = auditEntries.map((item) => `
+        <article class="stack-item feature-card">
+            <div class="stack-main">
+                <div class="stack-title-row">
+                    <strong>${escapeHtml(item.action.replaceAll('_', ' '))}</strong>
+                    <span class="micro-pill neutral">${escapeHtml(item.entity_type)}</span>
+                </div>
+                <span class="stack-path">${escapeHtml(item.actor_username)} · ${escapeHtml(item.created_at)}</span>
+                <span class="stack-path">${escapeHtml(formatAuditDetails(item.details))}</span>
+            </div>
+        </article>
+    `).join('');
+}
+
 function updateStats() {
+    if (!statsFiles || !statsRows || !statsCols) {
+        return;
+    }
     const totalFiles = spreadsheetData.length;
     const totalRows = spreadsheetData.reduce((sum, file) => sum + file.row_count, 0);
     const totalCols = allColumns.length;
-
     statsFiles.textContent = totalFiles;
     statsRows.textContent = totalRows.toLocaleString();
     statsCols.textContent = totalCols;
 }
 
-// --- Helpers ---
-
 function handleAutocompleteInput() {
     clearTimeout(autocompleteDebounce);
     const query = searchInput.value.trim();
-
     if (query.length < 2) {
         autocompleteItems = [];
         activeSuggestionIndex = -1;
         hideAutocomplete();
         return;
     }
-
-    autocompleteDebounce = window.setTimeout(() => {
-        fetchAutocomplete(query);
-    }, 180);
+    autocompleteDebounce = window.setTimeout(() => fetchAutocomplete(query), 180);
 }
 
 function moveActiveSuggestion(direction) {
     if (!autocompleteItems.length) {
         return;
     }
-
     activeSuggestionIndex = (activeSuggestionIndex + direction + autocompleteItems.length) % autocompleteItems.length;
     renderAutocomplete();
 }
@@ -896,7 +1333,6 @@ function syncUserPermissionInputs() {
 
     const isAdmin = newUserAdmin.checked;
     const permissionInputs = [permSearch, permSources, permSettings, permUsers].filter(Boolean);
-
     permissionInputs.forEach((input) => {
         input.disabled = isAdmin;
     });
@@ -929,9 +1365,68 @@ function previewLogo() {
         renderLogoMarkup(appSettings.logo_url);
         return;
     }
-
     const previewUrl = URL.createObjectURL(file);
     settingsLogoPreview.innerHTML = `<img src="${previewUrl}" alt="Logo preview" class="brand-logo-image">`;
+}
+
+function handleSaveCurrentSearchClick() {
+    const state = getCurrentSearchStateFromUi();
+    if (!state.query) {
+        showToast('Type a query first so there is something to save.', 'error');
+        return;
+    }
+    activateTab('saved-panel');
+    if (savedSearchName) {
+        savedSearchName.value = savedSearchName.value || state.query;
+        savedSearchName.focus();
+        savedSearchName.select();
+    }
+}
+
+function exportResultsPdf() {
+    const state = getCurrentSearchStateFromUi();
+    if (!state.query) {
+        showToast('Run a search before exporting.', 'error');
+        return;
+    }
+    const params = buildSearchParams(state);
+    window.location.href = `/api/export/pdf?${params.toString()}`;
+}
+
+function getCurrentSearchStateFromUi() {
+    return {
+        query: searchInput?.value.trim() || '',
+        selected_files: Array.from(selectedFiles),
+        selected_columns: Array.from(selectedColumns),
+    };
+}
+
+function buildSearchParams(state) {
+    const params = new URLSearchParams({ q: state.query });
+    if (state.selected_columns.length > 0 && state.selected_columns.length < allColumns.length) {
+        params.set('columns', state.selected_columns.join(','));
+    }
+    if (state.selected_files.length > 0 && state.selected_files.length < spreadsheetData.length) {
+        params.set('files', state.selected_files.join(','));
+    }
+    return params;
+}
+
+function applySearchState(state) {
+    currentSearchState = {
+        query: state.query || '',
+        selected_files: Array.isArray(state.selected_files) ? state.selected_files : [],
+        selected_columns: Array.isArray(state.selected_columns) ? state.selected_columns : [],
+    };
+    if (searchInput) {
+        searchInput.value = currentSearchState.query;
+    }
+    selectedFiles = new Set(currentSearchState.selected_files.length ? currentSearchState.selected_files : spreadsheetData.map((file) => file.id));
+    selectedColumns = new Set(currentSearchState.selected_columns.length ? currentSearchState.selected_columns : allColumns);
+    renderFileList();
+    renderColumnList();
+    activateTab('search-panel');
+    performSearch(currentSearchState);
 }
 
 function showLoading() {
@@ -941,6 +1436,7 @@ function showLoading() {
 function clearResults() {
     searchResults = [];
     currentPage = 1;
+    currentSearchState = { query: '', selected_files: Array.from(selectedFiles), selected_columns: Array.from(selectedColumns) };
     if (searchInput) {
         searchInput.value = '';
     }
@@ -948,10 +1444,7 @@ function clearResults() {
     if (resultsSummary) {
         resultsSummary.textContent = 'Ready to search';
     }
-    showEmptyState(
-        'Search across your connected spreadsheets',
-        'Run a search to see paginated result cards that stay readable on smaller screens.'
-    );
+    showEmptyState('Search across your connected spreadsheets', 'Run a search to see paginated result cards that stay readable on smaller screens.');
 }
 
 function showEmptyState(title, copy) {
@@ -964,9 +1457,18 @@ function showEmptyState(title, copy) {
     `;
 }
 
+function formatAuditDetails(details) {
+    if (!details || typeof details !== 'object') {
+        return '';
+    }
+    return Object.entries(details)
+        .map(([key, value]) => `${key.replaceAll('_', ' ')}: ${value}`)
+        .join(' · ');
+}
+
 function escapeHtml(value) {
     const div = document.createElement('div');
-    div.textContent = value;
+    div.textContent = value == null ? '' : String(value);
     return div.innerHTML;
 }
 
@@ -978,7 +1480,6 @@ function highlightText(text, query) {
     if (!query) {
         return escapeHtml(text);
     }
-
     const escapedText = escapeHtml(text);
     const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
     return escapedText.replace(regex, '<mark>$1</mark>');
